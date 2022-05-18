@@ -27,6 +27,7 @@ class NewSubGraph(nn.Module):
             self.layer_0_again = MLP(hidden_size)
 
     def forward(self, input_list: list):
+        # input_list: [batch_size, hidden_size] includes all the sub-graphs agents and polylines
         batch_size = len(input_list)
         device = input_list[0].device
         hidden_states, lengths = utils.merge_tensors(input_list, device)
@@ -146,10 +147,10 @@ class VectorNet(nn.Module):
         global starttime
         starttime = time.time()
 
-        matrix = utils.get_from_mapping(mapping, 'matrix')
+        matrix = utils.get_from_mapping(mapping, 'matrix') # Batch x Vector x 128
         # TODO(cyrushx): Can you explain the structure of polyline spans?
         # vectors of i_th element is matrix[polyline_spans[i]]
-        polyline_spans = utils.get_from_mapping(mapping, 'polyline_spans')
+        polyline_spans = utils.get_from_mapping(mapping, 'polyline_spans') # Batch x Polyline (10 vectors)
 
         batch_size = len(matrix)
         # for i in range(batch_size):
@@ -166,6 +167,7 @@ class VectorNet(nn.Module):
         for i, length in enumerate(inputs_lengths):
             attention_mask[i][:length][:length].fill_(1)
 
+        # Output of VectorNet
         hidden_states = self.global_graph(inputs, attention_mask, mapping)
 
         utils.logging('time3', round(time.time() - starttime, 2), 'secs')

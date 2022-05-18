@@ -124,17 +124,17 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
 
             for index_polygon, polygon in enumerate(polygons):
                 for i, point in enumerate(polygon):
-                    hash = get_hash(point)
+                    hash = get_hash(point)  # create hash table for points 
                     if hash not in visit:
                         visit[hash] = True
                         points.append(point)
 
-                if 'subdivide' in args.other_params:
-                    subdivide_points = get_subdivide_points(polygon)
+                if 'subdivide' in args.other_params: 
+                    subdivide_points = get_subdivide_points(polygon)  
                     points.extend(subdivide_points)
-                    subdivide_points = get_subdivide_points(polygon, include_self=True)
+                    subdivide_points = get_subdivide_points(polygon, include_self=True) # ??? not used
 
-            mapping['goals_2D'] = np.array(points)
+            mapping['goals_2D'] = np.array(points) 
 
         for index_polygon, polygon in enumerate(polygons):
             assert_(2 <= len(polygon) <= 10, info=len(polygon))
@@ -167,7 +167,7 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
                         vector[-9] = 1 if lane_segment.turn_direction == 'RIGHT' else \
                             -1 if lane_segment.turn_direction == 'LEFT' else 0
                         vector[-10] = 1 if lane_segment.is_intersection else -1
-                    point_pre_pre = (2 * point_pre[0] - point[0], 2 * point_pre[1] - point[1])
+                    point_pre_pre = (2 * point_pre[0] - point[0], 2 * point_pre[1] - point[1]) 
                     if i >= 2:
                         point_pre_pre = polygon[i - 2]
                     vector[-17] = point_pre_pre[0]
@@ -220,13 +220,16 @@ def preprocess(args, id2info, mapping):
     """
     This function calculates matrix based on information from get_instance.
     """
+
+    ### Get History: Agents + Map -> Vectors = Matrix ###
+
     polyline_spans = []
-    keys = list(id2info.keys())
+    keys = list(id2info.keys()) 
     assert 'AV' in keys
     assert 'AGENT' in keys
     keys.remove('AV')
     keys.remove('AGENT')
-    keys = ['AGENT', 'AV'] + keys
+    keys = ['AGENT', 'AV'] + keys # Agent, AV, others IDs
     vectors = []
     two_seconds = mapping['two_seconds']
     mapping['trajs'] = []
@@ -240,10 +243,10 @@ def preprocess(args, id2info, mapping):
             if id != 'AV' and id != 'AGENT':
                 break
 
-        agent = []
+        agent = [] # x, y 
         for i, line in enumerate(info):
-            if larger(line[TIMESTAMP], two_seconds):
-                break
+            if larger(line[TIMESTAMP], two_seconds):   
+                break # outside of history, either future anns, or other agents don't appear in the history.
             agent.append((line[X], line[Y]))
 
         if args.visualize:
@@ -260,7 +263,7 @@ def preprocess(args, id2info, mapping):
 
         for i, line in enumerate(info):
             if larger(line[TIMESTAMP], two_seconds):
-                break
+                break # outside of history
             x, y = line[X], line[Y]
             if i > 0:
                 # print(x-line_pre[X], y-line_pre[Y])
@@ -299,6 +302,9 @@ def preprocess(args, id2info, mapping):
     #     for j, each in enumerate(vector):
     #         matrix[i][j].fill_(each)
 
+
+    ### Get Labels ###
+
     labels = []
     info = id2info['AGENT']
     info = info[mapping['agent_pred_index']:]
@@ -317,8 +323,8 @@ def preprocess(args, id2info, mapping):
 
     if 'goals_2D' in args.other_params:
         point_label = np.array(labels[-2:])
-        mapping['goals_2D_labels'] = np.argmin(get_dis(mapping['goals_2D'], point_label))
-
+        mapping['goals_2D_labels'] = np.argmin(get_dis(mapping['goals_2D'], point_label)) # select the closest goal
+        
         if 'stage_one' in args.other_params:
             stage_one_label = 0
             polygons = mapping['polygons']
@@ -329,7 +335,7 @@ def preprocess(args, id2info, mapping):
                     min_dis = temp
                     stage_one_label = i
 
-            mapping['stage_one_label'] = stage_one_label
+            mapping['stage_one_label'] = stage_one_label # select the polygon with the closest point
 
     mapping.update(dict(
         matrix=matrix,
@@ -380,7 +386,7 @@ def argoverse_get_instance(lines, file_name, args):
             agent_lines = id2info['AGENT']
             mapping['cent_x'] = agent_lines[-1][X]
             mapping['cent_y'] = agent_lines[-1][Y]
-            mapping['agent_pred_index'] = len(agent_lines)
+            mapping['agent_pred_index'] = len(agent_lines) # what for? it'll always be 20 (if len(agent_lines) == 20)
             mapping['two_seconds'] = line[TIMESTAMP]
             if 'direction' in args.other_params:
                 span = agent_lines[-6:]
@@ -400,9 +406,9 @@ def argoverse_get_instance(lines, file_name, args):
             assert len(id2info['AGENT']) == 50
 
     if vector_num > max_vector_num:
-        max_vector_num = vector_num
-
-    if 'cent_x' not in mapping:
+        max_vector_num = vector_num  # vector_num is the number of vectors in the sequence 
+        
+    if 'cent_x' not in mapping: # if there is no cent_x, then ¿it's a test file? or we don't have good annotations 
         return None
 
     if args.do_eval:
@@ -451,6 +457,8 @@ class Dataset(torch.utils.data.Dataset):
                     files.extend([os.path.join(each_dir, file) for file in cur_files if
                                   file.endswith("csv") and not file.startswith('.')])
                 print(files[:5], files[-5:])
+                if args.debug:
+                    files = files[:5]
 
                 pbar = tqdm(total=len(files))
 

@@ -200,7 +200,7 @@ def add_argument(parser):
                         type=str)
     parser.add_argument("--mode_num",
                         default=6,
-                        type=int)
+                        type=int) 
 
 
 class Args:
@@ -1115,6 +1115,7 @@ def get_subdivide_points(polygon, include_self=False, threshold=1.0, include_bes
     def get_dis(point_a, point_b):
         return np.sqrt((point_a[0] - point_b[0]) ** 2 + (point_a[1] - point_b[1]) ** 2)
 
+    # Compute average distance between points
     average_dis = 0
     for i, point in enumerate(polygon):
         if i > 0:
