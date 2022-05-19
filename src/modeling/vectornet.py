@@ -19,7 +19,7 @@ class NewSubGraph(nn.Module):
         self.layers = nn.ModuleList([MLP(hidden_size, hidden_size // 2) for _ in range(depth)])
 
         self.layer_0 = MLP(hidden_size)
-        self.layers = nn.ModuleList([GlobalGraph(hidden_size, num_attention_heads=2) for _ in range(depth)])
+        self.layers = nn.ModuleList([GlobalGraph(hidden_size, num_attention_heads=2) for _ in range(depth)]) # depth = 3
         self.layers_2 = nn.ModuleList([LayerNorm(hidden_size) for _ in range(depth)])
         self.layers_3 = nn.ModuleList([LayerNorm(hidden_size) for _ in range(depth)])
         self.layers_4 = nn.ModuleList([GlobalGraph(hidden_size) for _ in range(depth)])
@@ -27,10 +27,10 @@ class NewSubGraph(nn.Module):
             self.layer_0_again = MLP(hidden_size)
 
     def forward(self, input_list: list):
-        # input_list: [batch_size, hidden_size] includes all the sub-graphs agents and polylines
-        batch_size = len(input_list)
+        # input_list: [n vectors in batch i, hidden_size] includes all the sub-graphs (agents and polylines)
+        batch_size = len(input_list) # N polylines in batch
         device = input_list[0].device
-        hidden_states, lengths = utils.merge_tensors(input_list, device)
+        hidden_states, lengths = utils.merge_tensors(input_list, device) # [N polylines, max(length), hidden_size]
         hidden_size = hidden_states.shape[2]
         max_vector_num = hidden_states.shape[1]
 
@@ -76,7 +76,7 @@ class VectorNet(nn.Module):
 
         self.global_graph = GlobalGraph(hidden_size)
         if 'enhance_global_graph' in args.other_params:
-            self.global_graph = GlobalGraphRes(hidden_size)
+            self.global_graph = GlobalGraphRes(hidden_size)  
         if 'laneGCN' in args.other_params:
             self.laneGCN_A2L = CrossAttention(hidden_size)
             self.laneGCN_L2L = GlobalGraphRes(hidden_size)
@@ -128,7 +128,7 @@ class VectorNet(nn.Module):
         if 'laneGCN' in args.other_params:
             inputs_before_laneGCN, inputs_lengths_before_laneGCN = utils.merge_tensors(element_states_batch, device=device)
             for i in range(batch_size):
-                map_start_polyline_idx = mapping[i]['map_start_polyline_idx']
+                map_start_polyline_idx = mapping[i]['map_start_polyline_idx'] # done before
                 agents = element_states_batch[i][:map_start_polyline_idx]
                 lanes = element_states_batch[i][map_start_polyline_idx:]
                 if 'laneGCN-4' in args.other_params:
@@ -150,7 +150,7 @@ class VectorNet(nn.Module):
         matrix = utils.get_from_mapping(mapping, 'matrix') # Batch x Vector x 128
         # TODO(cyrushx): Can you explain the structure of polyline spans?
         # vectors of i_th element is matrix[polyline_spans[i]]
-        polyline_spans = utils.get_from_mapping(mapping, 'polyline_spans') # Batch x Polyline (10 vectors)
+        polyline_spans = utils.get_from_mapping(mapping, 'polyline_spans') # Batch x Polyline (20 vectors)
 
         batch_size = len(matrix)
         # for i in range(batch_size):
@@ -167,7 +167,7 @@ class VectorNet(nn.Module):
         for i, length in enumerate(inputs_lengths):
             attention_mask[i][:length][:length].fill_(1)
 
-        # Output of VectorNet
+        # Output of VectorNet3
         hidden_states = self.global_graph(inputs, attention_mask, mapping)
 
         utils.logging('time3', round(time.time() - starttime, 2), 'secs')

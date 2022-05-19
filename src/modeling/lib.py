@@ -83,11 +83,11 @@ class GlobalGraph(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(self, hidden_states, attention_mask=None, mapping=None, return_scores=False):
-        mixed_query_layer = self.query(hidden_states)
-        mixed_key_layer = nn.functional.linear(hidden_states, self.key.weight)
+        mixed_query_layer = self.query(hidden_states) # (batch, max_vector_num, hidden_dim)
+        mixed_key_layer = nn.functional.linear(hidden_states, self.key.weight) # why? looks the same as self.key
         mixed_value_layer = self.value(hidden_states)
 
-        query_layer = self.transpose_for_scores(mixed_query_layer)
+        query_layer = self.transpose_for_scores(mixed_query_layer)  # (batch, num heads, max_vector_num, head_size)
         key_layer = self.transpose_for_scores(mixed_key_layer)
         value_layer = self.transpose_for_scores(mixed_value_layer)
 
@@ -95,10 +95,11 @@ class GlobalGraph(nn.Module):
             query_layer / math.sqrt(self.attention_head_size), key_layer.transpose(-1, -2))
         # print(attention_scores.shape, attention_mask.shape)
         if attention_mask is not None:
-            attention_scores = attention_scores + self.get_extended_attention_mask(attention_mask)
+            # turn 1 to 0, 0 to -10000.0 in att_mask for softmax - a way to enhance the attention?
+            attention_scores = attention_scores + self.get_extended_attention_mask(attention_mask) 
         # if utils.args.attention_decay and utils.second_span:
         #     attention_scores[:, 0, 0, 0] = attention_scores[:, 0, 0, 0] - self.attention_decay
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
+        attention_probs = nn.Softmax(dim=-1)(attention_scores) # (batch, num heads, max_vector_num, max_vector_num)
         if utils.args.visualize and mapping is not None:
             for i, each in enumerate(attention_probs.tolist()):
                 mapping[i]['attention_scores'] = np.array(each[0])

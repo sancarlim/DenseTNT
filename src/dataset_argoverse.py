@@ -458,7 +458,7 @@ class Dataset(torch.utils.data.Dataset):
                                   file.endswith("csv") and not file.startswith('.')])
                 print(files[:5], files[-5:])
                 if args.debug:
-                    files = files[:5]
+                    files = files[:128]
 
                 pbar = tqdm(total=len(files))
 
