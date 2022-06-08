@@ -25,6 +25,9 @@ from torch import Tensor
 
 import utils_cython, structs
 
+from argoverse.map_representation.map_api import ArgoverseMap
+am = ArgoverseMap()
+
 _False = False
 if _False:
     import utils_cython
@@ -45,18 +48,18 @@ def add_argument(parser):
                         default='train/data/',
                         type=str)
     parser.add_argument("--data_dir_for_val",
-                        default='val/data/',
+                        default='/home/s0001563/Eye4AI/2022eye4aimotionprediction/argoverse/val/data/',
                         type=str)
-    parser.add_argument("--output_dir", default="tmp/", type=str)
+    parser.add_argument("--output_dir", default="/home/s0001563/Eye4AI/2022eye4aimotionprediction/DenseTNT/models.densetnt.1", type=str)
     parser.add_argument("--log_dir", default=None, type=str)
     parser.add_argument("--temp_file_dir", default=None, type=str)
     parser.add_argument("--train_batch_size",
-                        default=64,
+                        default=16,
                         type=int,
                         help="Total batch size for training.")
 
     parser.add_argument("--eval_batch_size",
-                        default=64,
+                        default=16,
                         type=int,
                         help="Total batch size for eval.")
     parser.add_argument("--model_recover_path",
@@ -80,7 +83,7 @@ def add_argument(parser):
                         action='store_true',
                         help="Whether not to use CUDA when available")
     parser.add_argument("--hidden_size",
-                        default=64,
+                        default=128,
                         type=int)
     parser.add_argument("--hidden_dropout_prob",
                         default=0.1,
@@ -135,7 +138,7 @@ def add_argument(parser):
     parser.add_argument("--not_use_api",
                         action='store_true')
     parser.add_argument("--core_num",
-                        default=1,
+                        default=16,
                         type=int)
     parser.add_argument("--visualize",
                         action='store_true')
@@ -183,7 +186,7 @@ def add_argument(parser):
     parser.add_argument("--nuscenes",
                         action='store_true')
     parser.add_argument("--future_frame_num",
-                        default=80,
+                        default=30,
                         type=int)
     parser.add_argument("--future_test_frame_num",
                         default=16,
@@ -200,8 +203,7 @@ def add_argument(parser):
                         type=str)
     parser.add_argument("--mode_num",
                         default=6,
-                        type=int) 
-
+                        type=int)
 
 class Args:
     data_dir = None
@@ -691,6 +693,10 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             if add_end:
                 plt.plot(each[-1, 0], each[-1, 1], markersize=15 * marker_size_scale, color="darkorange", marker="*",
                          markeredgecolor='black')
+
+            _, conf, line = am.get_nearest_centerline(np.array(np.array([each[-1, 0], each[-1, 1]])), visualize=True, city_name=mapping["city_name"])
+            plt.plot(line[:, 0], line[:, 1], color="y") # plot the centerline
+
 
         if add_end:
             plt.plot(labels[-2], labels[-1], markersize=15 * marker_size_scale, color=target_agent_color, marker="*",
