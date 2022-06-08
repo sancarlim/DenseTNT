@@ -56,7 +56,7 @@ def add_argument(parser):
                         help="Total batch size for training.")
 
     parser.add_argument("--eval_batch_size",
-                        default=64,
+                        default=16,
                         type=int,
                         help="Total batch size for eval.")
     parser.add_argument("--model_recover_path",
