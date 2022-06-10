@@ -26,6 +26,8 @@ from torch import Tensor
 import utils_cython, structs
 
 from argoverse.map_representation.map_api import ArgoverseMap
+from argoverse.utils.centerline_utils import get_centerlines_most_aligned_with_trajectory
+
 am = ArgoverseMap()
 
 _False = False
@@ -685,27 +687,76 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         # s is size, default 20
 
         # if False:
-        for each in predict:
+        lanes = [] 
+        goals = np.empty((len(predict),2))
+        for m, each in enumerate(predict):
             function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
                                  linewidth=linewidth,
                                  zorder=0, label='Predicted trajectory')
 
+            goals[m] = [each[-1,0], each[-1,1]]
             if add_end:
-                plt.plot(each[-1, 0], each[-1, 1], markersize=15 * marker_size_scale, color="darkorange", marker="*",
+                plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
                          markeredgecolor='black')
+            
+            # Transform point to original coordinate
+            to_origin_coordinate(each[-2:], mapping['element_in_batch'])
 
-            _, conf, line = am.get_nearest_centerline(np.array(np.array([each[-1, 0], each[-1, 1]])), visualize=True, city_name=mapping["city_name"])
-            plt.plot(line[:, 0], line[:, 1], color="y") # plot the centerline
+            # Compute agent direction
+            agent_vector_dir = each[-1] - each[-2]
 
+            # Find nearest centerline to the end point for subsequent clustering
+            lane_id, conf, lines = am.get_nearest_centerline((each[-1]),agent_vector_dir, visualize=False, city_name=mapping["city_name"])
+            lanes.append(lane_id) 
+            # Find local centerline: Array of arrays, representing an array of lane centerlines, each a polyline
+            # local_centerline = am.find_local_lane_centerlines(each[-1, 0], each[-1, 1], mapping["city_name"], query_search_range_manhattan=10)
+            
+            # Transform to relative coordinate and plot
+            for line in lines: 
+                to_relative_coordinate(line, mapping['cent_x'],mapping['cent_y'],mapping['angle']) 
+                plt.plot(line[:, 0], line[:, 1], color="y", linewidth=linewidth+1, zorder=0.5, label='mode centerline') # plot the centerline
+
+        
+        # Cluster the end points into intention-modes with lanes
+        # If goals share at least one lane, then they are in the same cluster
+        clusters = [] # goal clusters
+        cluster_lanes = [] # lanes of each cluster
+        for i,l in enumerate(lanes):
+            clusterized = False
+            if i==0:
+                clusters.append([i])
+                cluster_lanes.append(set(l))
+            else:
+                # If any lane in l is in cluster_lanes, then they are in the same cluster
+                for j in range(len(clusters)):
+                    if any(l[i] in cluster_lanes[j] for i in range(len(l))):
+                        clusters[j].append(i)
+                        cluster_lanes[j].update(l)
+                        clusterized = True
+                        break 
+                if not clusterized:
+                    clusters.append([i])
+                    cluster_lanes.append(set(l))
+
+        # Average the end points of each cluster
+        cluster_avg = []
+        for i,c in enumerate(clusters):
+            cluster_avg.append(np.mean(goals[c], axis=0))
+
+        # Plot the cluster end points
+        for i,c in enumerate(cluster_avg):
+            function3 = plt.plot(c[0], c[1], markersize=10 * marker_size_scale, color="gold", marker="o",
+                     markeredgecolor='black', zorder=10, label='cluster end point')
 
         if add_end:
-            plt.plot(labels[-2], labels[-1], markersize=15 * marker_size_scale, color=target_agent_color, marker="*",
+            plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
                      markeredgecolor='black')
 
         function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
                              zorder=0, label='Ground truth trajectory')
-
-    functions = function1 + function2
+    
+    
+    functions = function1 + function2 + function3
     fun_labels = [f.get_label() for f in functions]
     plt.legend(functions, fun_labels, loc=0)
 
@@ -716,8 +767,9 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     ax.yaxis.set_major_locator(MultipleLocator(4))
 
     os.makedirs(os.path.join(args.log_dir, 'visualize_' + time_begin), exist_ok=True)
-    plt.savefig(os.path.join(args.log_dir, 'visualize_' + time_begin,
-                             get_name("visualize" + ("" if name == "" else "_" + name) + ".png")), bbox_inches='tight')
+    name = os.path.join(args.log_dir, 'visualize_' + time_begin,
+                             get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
+    plt.savefig(name, bbox_inches='tight')
     plt.close()
     global visualize_num
     visualize_num += 1

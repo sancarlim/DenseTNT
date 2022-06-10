@@ -48,7 +48,7 @@ class Decoder(nn.Module):
 
         self.decoder = DecoderRes(hidden_size, out_features=2)
 
-        if 'variety_loss' in args.other_params:
+        if 'variety_loss' in args.other_params: #NO
             self.variety_loss_decoder = DecoderResCat(hidden_size, hidden_size, out_features=6 * self.future_frame_num * 2)
 
             if 'variety_loss-prob' in args.other_params:
@@ -294,6 +294,7 @@ class Decoder(nn.Module):
             pass
         if args.visualize:
             for i in range(batch_size):
+                mapping[i]['element_in_batch'] = i
                 utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
                                          labels=mapping[i]['vis.labels'],
                                          labels_is_valid=mapping[i]['vis.labels_is_valid'],
@@ -346,7 +347,7 @@ class Decoder(nn.Module):
                 inputs_lengths: List[int], hidden_states: Tensor, device):
         """
         :param lane_states_batch: each value in list is hidden states of lanes (value shape ['lane num', hidden_size])
-        :param inputs: hidden states of all elements before encoding by global graph (shape [batch_size, 'element num', hidden_size])
+        :param inputs: hidden states of all elements before encoding by global graph (shape [batch_size, 'max element num', hidden_size])
         :param inputs_lengths: valid element number of each example
         :param hidden_states: hidden states of all elements after encoding by global graph (shape [batch_size, 'element num', hidden_size])
         """
@@ -381,6 +382,7 @@ class Decoder(nn.Module):
                 if args.visualize:
                     for i in range(batch_size):
                         predict = np.zeros((self.mode_num, self.future_frame_num, 2))
+                        mapping[i]['element_in_batch'] = i
                         utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'],
                                                  self.future_frame_num,
                                                  labels=mapping[i]['vis.labels'],
