@@ -628,6 +628,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     trajs = mapping['trajs']
     if args.argoverse:
         name = os.path.split(mapping['file_name'])[1].split('.')[0]
+        if name == '33036':
+            print('33036')
     name = name + '.FDE={}'.format(loss)
 
     add_end = True
@@ -699,11 +701,12 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
                          markeredgecolor='black')
             
-            # Transform point to original coordinate
-            to_origin_coordinate(each[-2:], mapping['element_in_batch'])
+            # Compute trajectory direction
+            agent_vector_dir = each[-1] - each[-4]
+            agent_vector_dir = np.arctan2(agent_vector_dir[1],agent_vector_dir[0])
 
-            # Compute agent direction
-            agent_vector_dir = each[-1] - each[-2]
+            # Transform point to original coordinate
+            to_origin_coordinate(each[-1:], mapping['element_in_batch'])
 
             # Find nearest centerline to the end point for subsequent clustering
             lane_id, conf, lines = am.get_nearest_centerline((each[-1]),agent_vector_dir, visualize=False, city_name=mapping["city_name"])
