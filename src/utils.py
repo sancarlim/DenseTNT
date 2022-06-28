@@ -14,6 +14,8 @@ from collections import defaultdict
 from multiprocessing import Process
 from random import randint
 from typing import Dict, List, Tuple, NamedTuple, Any, Union, Optional
+import scipy
+import seaborn as sns
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -26,7 +28,11 @@ from torch import Tensor
 import utils_cython, structs
 
 from argoverse.map_representation.map_api import ArgoverseMap
+from argoverse.utils.centerline_utils import get_centerlines_most_aligned_with_trajectory
+
 am = ArgoverseMap()
+
+line_colors = ['#375397', '#F05F78', '#80CBE5', '#ABCB51', '#C8B0B0',"#FFFF00"] # dark blue, red, light blue, green, brown. yellow
 
 _False = False
 if _False:
@@ -202,7 +208,7 @@ def add_argument(parser):
                         nargs=2,
                         type=str)
     parser.add_argument("--mode_num",
-                        default=6,
+                        default=12,
                         type=int)
 
 class Args:
@@ -576,7 +582,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     print('speed', mapping.get('seep', None))
 
     assert predict is not None
-    predict = predict.reshape([6, future_frame_num, 2])
+    predict = predict.reshape([args.mode_num, future_frame_num, 2])
     assert labels.shape == (future_frame_num, 2)
 
     if 'eval_time' in mapping:
@@ -603,12 +609,13 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     fig_scale = 1.0
     marker_size_scale = 2
     # target_agent_color, target_agent_edge_color = '#0d79e7', '#bcd6ed' # blue
-    target_agent_color, target_agent_edge_color = '#4bad34', '#c5dfb3'
+    target_agent_color, target_agent_edge_color = '#4bad34', '#c5dfb3' #green
 
     def get_scaled_int(a):
         return round(a * fig_scale)
 
     plt.cla()
+    sns.set()
     fig = plt.figure(0, figsize=(get_scaled_int(45), get_scaled_int(38)))
 
     if True:
@@ -625,7 +632,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
 
     trajs = mapping['trajs']
     if args.argoverse:
-        name = os.path.split(mapping['file_name'])[1].split('.')[0]
+        name = os.path.split(mapping['file_name'])[1].split('.')[0] 
     name = name + '.FDE={}'.format(loss)
 
     add_end = True
@@ -685,27 +692,175 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         # s is size, default 20
 
         # if False:
-        for each in predict:
+        lanes = [] 
+        lanes_dir = []
+        agent_lanes_dir = []
+        goals = np.empty((len(predict),2))
+        for m, each in enumerate(predict):
             function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
                                  linewidth=linewidth,
                                  zorder=0, label='Predicted trajectory')
 
+            goals[m] = [each[-1,0], each[-1,1]]
             if add_end:
-                plt.plot(each[-1, 0], each[-1, 1], markersize=15 * marker_size_scale, color="darkorange", marker="*",
+                plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
                          markeredgecolor='black')
+            
+            # Compute trajectory direction
+            agent_vector_dir = each[-1] - each[-4]
+            agent_dir = np.arctan2(agent_vector_dir[1],agent_vector_dir[0])
 
-            _, conf, line = am.get_nearest_centerline(np.array(np.array([each[-1, 0], each[-1, 1]])), visualize=True, city_name=mapping["city_name"])
-            plt.plot(line[:, 0], line[:, 1], color="y") # plot the centerline
+            # Transform point to original coordinate
+            to_origin_coordinate(each[-1:], mapping['element_in_batch'])
 
+            # Find nearest centerline to the end point for subsequent clustering
+            name_fig_lanes = os.path.join(args.log_dir, 'visualize_' + time_begin, f"lanes_mode{m}_"+ name.split('.')[0] + ".png")
+            os.makedirs(os.path.join(args.log_dir, 'visualize_' + time_begin), exist_ok=True)
+            lane_id, conf, lines, distances = am.get_nearest_centerline((each[-1]), visualize=False, name=name_fig_lanes ,city_name=mapping["city_name"]) 
+            ids_list = []  
+            lane_dir = [] 
+            agent_lane_angle_list = []
+            distances_list = []
+            for i, line in enumerate(lines): 
+                # Convert to relative coorinates to be in the same frame as the trajectory
+                to_relative_coordinate(line, mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
+                # Compute lane direction
+                # compute norms to waypoints
+                closest_waypt_indxs = np.linalg.norm(line - each[-1], axis=1).argsort()[:2]
+                # Compute lane direction (as a vector)
+                prev_waypoint_id = closest_waypt_indxs.min()
+                next_waypoint_id = closest_waypt_indxs.max()
+                prev_waypoint = line[prev_waypoint_id]
+                next_waypoint = line[next_waypoint_id]
+                lane_dir_vector = next_waypoint - prev_waypoint 
+                lane_dir.append(lane_dir_vector)
+                #Visualize line directions
+                if True:
+                    #plt.figure(1)
+                    plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
+                            linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
+                    plt.scatter(
+                        prev_waypoint[0],
+                        prev_waypoint[1],
+                        200,
+                        marker=".",
+                        color="b",
+                    )
+                    dx = lane_dir_vector[0] * 10
+                    dy = lane_dir_vector[1] * 10
+                    plt.arrow(
+                        prev_waypoint[0],
+                        prev_waypoint[1],
+                        dx,
+                        dy,
+                        color="r",
+                        width=0.3,
+                        zorder=2,
+                    )
+                    centerline_length = line.shape[0]
+                    for j in range(centerline_length):
+                        plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
+                    plt.axis("equal") 
+                    plt.show()
+                # Compute angle between agent and lane
+                agent_lane_angle = abs( agent_dir - np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) )
+                #np.arccos(np.dot(agent_dir_vector, lane_dir_vectors[i]) / (np.linalg.norm(agent_dir_vector) * np.linalg.norm(lane_dir_vectors[i])))
+                if agent_lane_angle < np.pi / 4: 
+                    agent_lane_angle_list.append(agent_lane_angle)
+                    ids_list.append(i) 
+            #plt.close(1)
+            #plt.figure(0)
+            if len(ids_list) > 0: 
+                lane_id, conf, lines, lane_dir, distances = [lane_id[i] for i in ids_list], conf[ids_list], [lines[i] for i in ids_list], [lane_dir[i] for i in ids_list], [distances[i] for i in ids_list]
+                # Plot lines in relative coordinates
+                for line in lines: 
+                    plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], linewidth=linewidth+1, zorder=0.5, label='mode centerline') # plot the centerline
+            else:
+                print("No lanes found with agent_lane_angle < pi/4")
+                lane_id = []
+            
+            lanes.append(lane_id) 
+            lanes_dir.append(lane_dir)
+            agent_lanes_dir.append(agent_lane_angle_list)
+            distances_list.append(distances)
+
+            # Find local centerline: Array of arrays, representing an array of lane centerlines, each a polyline
+            # local_centerline = am.find_local_lane_centerlines(each[-1, 0], each[-1, 1], mapping["city_name"], query_search_range_manhattan=10)
+            
+            
+        def get_lanes_with_different_directions(vecs: list):
+            """Given n lanes' vectors directions compute the angle between them and return the 
+            indexes of those whose angle differs in more than 45 degrees """
+            indexes = []
+            for i in range(len(vecs)): 
+                for j in range(i+1,len(vecs)):
+                    angle_dif = abs( np.arctan2(vecs[i][1],vecs[i][0]) - np.arctan2(vecs[j][1],vecs[j][0]) )
+                    if angle_dif > np.pi / 4:
+                        # lanes i, j have a different direction
+                        indexes.append([i,j])
+            return indexes
+
+        # Cluster the end points into intention-modes with lanes
+        # If goals share at least one lane, then they are in the same cluster
+        clusters = [] # goal clusters
+        cluster_lanes = [] # lanes of each cluster
+        for mode_i,lanes_per_cluster in enumerate(lanes):
+            clusterized = False
+            if mode_i==0:   
+                clusters.append([mode_i])
+                cluster_lanes.append(set(lanes_per_cluster)) 
+            else:
+                # If any lane in l is in cluster_lanes, then they are in the same cluster 
+                for j in range(len(clusters)):
+                    if any(lanes_per_cluster[i] in cluster_lanes[j] for i in range(len(lanes_per_cluster))):
+                        clusters[j].append(mode_i)
+                        cluster_lanes[j].update(lanes_per_cluster)
+                        clusterized = True
+                        break 
+                if not clusterized:
+                    if len(lanes_per_cluster) != 0:
+                        clusters.append([mode_i])
+                        cluster_lanes.append(set(lanes_per_cluster))
+
+        # Find mean and std for the end points of each cluster
+        cluster_avg = []
+        for i,c in enumerate(clusters):
+            cluster_avg.append(np.mean(goals[c], axis=0))
+            # cluster_std.append(goals[c].std(0))
+
+        # Compute probabilities
+        def do_kdtree(combined_x_y_arrays,points):
+            mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
+            dist, indexes = mytree.query(points)
+            return indexes
+        goals2goals2D = [np.array(np.floor(g)) for g in goals]
+        #find the scores for these goals
+        score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
+        goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
+        cluster_probs = [sum(goals_probs[c]) for c in clusters]
+        blues = plt.get_cmap('Blues')
+
+        # Plot the cluster end points
+        plt.figure(0)
+        for i,c in enumerate(cluster_avg):
+            try:
+                sns.kdeplot(x=goals[clusters[i],0], y=goals[clusters[i],1],
+                                shade=True, thresh=0.05, 
+                                    color=blues(cluster_probs[i]), zorder=0.5, alpha=0.8)
+            except:
+                pass
+            function3 = plt.plot(c[0], c[1], markersize=6 * marker_size_scale, color=blues(cluster_probs[i]), marker="o",
+                     markeredgecolor='black', zorder=10, label='cluster end point')  #line_colors[clusters[i][0]%6]
 
         if add_end:
-            plt.plot(labels[-2], labels[-1], markersize=15 * marker_size_scale, color=target_agent_color, marker="*",
+            plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
                      markeredgecolor='black')
 
         function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
                              zorder=0, label='Ground truth trajectory')
-
-    functions = function1 + function2
+    
+    
+    functions = function1 + function2 + function3
     fun_labels = [f.get_label() for f in functions]
     plt.legend(functions, fun_labels, loc=0)
 
@@ -715,9 +870,9 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     ax.xaxis.set_major_locator(MultipleLocator(4))
     ax.yaxis.set_major_locator(MultipleLocator(4))
 
-    os.makedirs(os.path.join(args.log_dir, 'visualize_' + time_begin), exist_ok=True)
-    plt.savefig(os.path.join(args.log_dir, 'visualize_' + time_begin,
-                             get_name("visualize" + ("" if name == "" else "_" + name) + ".png")), bbox_inches='tight')
+    name = os.path.join(args.log_dir, 'visualize_' + time_begin,
+                             get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
+    plt.savefig(name, bbox_inches='tight')
     plt.close()
     global visualize_num
     visualize_num += 1
@@ -1405,8 +1560,8 @@ def select_goals_by_optimization(batch_gt_points, mapping, close=False):
         pass
 
     expectations = np.ones(batch_size) * 10000.0
-    batch_ans_points = np.zeros([batch_size, 6, 2])
-    batch_pred_probs = np.zeros([batch_size, 6])
+    batch_ans_points = np.zeros([batch_size, args.mode_num, 2])
+    batch_pred_probs = np.zeros([batch_size, args.mode_num])
     for _ in range(run_times * batch_size):
         i, expectation, ans_points, pred_probs = queue_res.get()
         if expectation < expectations[i]:

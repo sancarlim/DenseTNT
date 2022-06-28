@@ -122,7 +122,8 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
 
             mapping['polygons'] = polygons
 
-            for index_polygon, polygon in enumerate(polygons):
+            # Retrieve all points in the polygones (lanes on a radius of 50m) - goals_2D
+            for index_polygon, polygon in enumerate(polygons): 
                 for i, point in enumerate(polygon):
                     hash = get_hash(point)  # create hash table for points 
                     if hash not in visit:
@@ -132,14 +133,14 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
                 if 'subdivide' in args.other_params: 
                     subdivide_points = get_subdivide_points(polygon)  
                     points.extend(subdivide_points)
-                    subdivide_points = get_subdivide_points(polygon, include_self=True) # ??? not used
+                    subdivide_points = get_subdivide_points(polygon, include_self=True)  
 
             mapping['goals_2D'] = np.array(points) 
 
+        # Create vectors for polygones/lanes
         for index_polygon, polygon in enumerate(polygons):
-            assert_(2 <= len(polygon) <= 10, info=len(polygon))
+            assert_(2 <= len(polygon) <= 10, info=len(polygon))  #most of the lengths are 10 points
             # assert len(polygon) % 2 == 1
-
             # if args.visualize:
             #     traj = np.zeros((len(polygon), 2))
             #     for i, point in enumerate(polygon):
@@ -158,7 +159,7 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
                     vector[-1 - VECTOR_PRE_X], vector[-1 - VECTOR_PRE_Y] = point_pre[0], point_pre[1]
                     vector[-1 - VECTOR_X], vector[-1 - VECTOR_Y] = point[0], point[1]
                     vector[-5] = 1
-                    vector[-6] = i
+                    vector[-6] = i #position in the polyline
 
                     vector[-7] = len(polyline_spans)
 
@@ -389,7 +390,7 @@ def argoverse_get_instance(lines, file_name, args):
             mapping['agent_pred_index'] = len(agent_lines) # what for? it'll always be 20 (if len(agent_lines) == 20)
             mapping['two_seconds'] = line[TIMESTAMP]
             if 'direction' in args.other_params:
-                span = agent_lines[-6:]
+                span = agent_lines[-args.mode_num:]
                 intervals = [2]
                 angles = []
                 for interval in intervals:
@@ -455,8 +456,7 @@ class Dataset(torch.utils.data.Dataset):
                 for each_dir in data_dir:
                     root, dirs, cur_files = os.walk(each_dir).__next__()
                     files.extend([os.path.join(each_dir, file) for file in cur_files if
-                                  file.endswith("csv") and not file.startswith('.')])
-                print(files[:5], files[-5:])
+                                  file.endswith("csv") and not file.startswith('.')]) 
                 if args.debug:
                     files = files[:128]
 
@@ -566,7 +566,7 @@ def post_eval(args, file2pred, file2labels, DEs):
             type=score_file, to_screen=True, append_time=True)
     utils.logging('other_errors {}'.format(utils.other_errors_to_string()),
                   type=score_file, to_screen=True, append_time=True)
-    metric_results = eval_forecasting.get_displacement_errors_and_miss_rate(file2pred, file2labels, 6, 30, 2.0)
+    metric_results = eval_forecasting.get_displacement_errors_and_miss_rate(file2pred, file2labels, args.mode_num, 30, 2.0)
     utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
     DE = np.concatenate(DEs, axis=0)
     length = DE.shape[1]

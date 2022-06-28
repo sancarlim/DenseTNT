@@ -133,6 +133,7 @@ cdef np.float32_t get_value(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarra
     cdef np.float32_t value = 0.0, cnt_hit, x, y, sum, minFDE, t_float, miss_error, stride, s_x, s_y
     cdef int i, j, k, need, cnt, t_int, objective_int, cnt_len = 0, a, b
     cdef np.ndarray[np.float32_t, ndim=1] point = np.zeros(2, dtype=np.float32)
+    mode_num = kwargs.get('--mode_num', 12) 
 
     for i in range(100):
         if i * i == cnt_sample:
@@ -166,7 +167,7 @@ cdef np.float32_t get_value(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarra
                 y = s_y + b * stride
                 minFDE = 10000.0
                 miss_error = 10.0
-                for j in range(6):
+                for j in range(mode_num):
                     t_float = get_dis_point(x - selected_points[j, 0], y - selected_points[j, 1])
                     if t_float < minFDE:
                         minFDE = t_float
@@ -187,12 +188,13 @@ def _get_optimal_targets(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarray[n
     n = goals_2D.shape[0]
     m = 0
     threshold = 0.001
-    cdef np.ndarray[np.float32_t, ndim=2] ans_points = np.zeros((6, 2), dtype=np.float32)
-    cdef np.ndarray[np.float32_t, ndim=2] nxt_points = np.zeros((6, 2), dtype=np.float32)
-    cdef np.ndarray[np.float32_t, ndim=1] pred_probs = np.zeros(6, dtype=np.float32)
+    mode_num = kwargs.get('--mode_num',12) 
+    cdef np.ndarray[np.float32_t, ndim=2] ans_points = np.zeros((mode_num, 2), dtype=np.float32)
+    cdef np.ndarray[np.float32_t, ndim=2] nxt_points = np.zeros((mode_num, 2), dtype=np.float32)
+    cdef np.ndarray[np.float32_t, ndim=1] pred_probs = np.zeros(mode_num, dtype=np.float32)
     cdef:
         float best_expectation = 10000.0
-        np.ndarray[np.float32_t, ndim=2] best_points = np.zeros((6, 2), dtype=np.float32)
+        np.ndarray[np.float32_t, ndim=2] best_points = np.zeros((mode_num, 2), dtype=np.float32)
 
     cdef float start_time = clock()
     if opti_time < 100.0:
@@ -208,7 +210,7 @@ def _get_optimal_targets(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarray[n
         print('warning: m == 0')
     n = m
 
-    for j in range(6):
+    for j in range(mode_num):
         t_int = get_rand_int(0, n - 1)
         ans_points[j, 0] = goals_2D[t_int, 0]
         ans_points[j, 1] = goals_2D[t_int, 1]
@@ -222,7 +224,7 @@ def _get_optimal_targets(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarray[n
         ratio = ratio / num_step
 
         lr = exp(-(ratio * 2))
-        for j in range(6):
+        for j in range(mode_num):
             nxt_points[j, 0] = ans_points[j, 0]
             nxt_points[j, 1] = ans_points[j, 1]
 
@@ -230,7 +232,7 @@ def _get_optimal_targets(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarray[n
         if op == 0:
             while True:
                 ok = 0
-                for j in range(6):
+                for j in range(mode_num):
                     if get_rand(0.0, 1.0) < 0.3:
                         nxt_points[j, 0] += get_rand(-lr, lr)
                         nxt_points[j, 1] += get_rand(-lr, lr)
@@ -250,20 +252,20 @@ def _get_optimal_targets(np.ndarray[np.float32_t, ndim=2] goals_2D, np.ndarray[n
 
         if go:
             expectation = nxt_expectation
-            for j in range(6):
+            for j in range(mode_num):
                 ans_points[j, 0] = nxt_points[j, 0]
                 ans_points[j, 1] = nxt_points[j, 1]
 
         if expectation < best_expectation:
             best_expectation = expectation
-            for j in range(6):
+            for j in range(mode_num):
                 best_points[j, 0], best_points[j, 1] = ans_points[j, 0], ans_points[j, 1]
 
     min_expectation = 10000.0
     argmin = 0
 
-    for j in range(6):
-        for k in range(6):
+    for j in range(mode_num):
+        for k in range(mode_num):
             nxt_points[k, 0], nxt_points[k, 1] = best_points[j, 0], best_points[j, 1]
         t = get_value(goals_2D, scores, nxt_points, n, 'minFDE', cnt_sample, MRratio, kwargs)
         pred_probs[j] = 1.0 - get_value(goals_2D, scores, nxt_points, n, objective, cnt_sample, MRratio, kwargs)
@@ -328,6 +330,7 @@ cdef float _set_predict_get_value(np.ndarray[np.float32_t, ndim=2] goals_2D,
         int n = goals_2D.shape[0]
         np.ndarray[np.float32_t, ndim=1] point = np.zeros(2, dtype=np.float32)
         float MRratio = 1.0
+        mode_num = kwargs.get('--mode_num',12)
 
         float value = 0.0, cnt_hit, x, y, sum, minFDE, t_float, miss_error, stride, s_x, s_y
         int i, j, k, need, cnt, t_int, objective_int, cnt_len = 3, a, b
@@ -364,7 +367,7 @@ cdef float _set_predict_get_value(np.ndarray[np.float32_t, ndim=2] goals_2D,
                     minFDE = 10000.0
                     miss_error = 1.0
                     # warning: miss_error is not 10.0
-                    for j in range(6):
+                    for j in range(mode_num):
                         t_float = get_dis_point(x - selected_points[j, 0], y - selected_points[j, 1])
                         if t_float < minFDE:
                             minFDE = t_float
@@ -385,22 +388,23 @@ def _set_predict_next_step(np.ndarray[np.float32_t, ndim=2] goals_2D,
                            float lr, kwargs):
     cdef:
         int step, j, ok, num_step = 100
+        mode_num = kwargs.get('--mode_num',12)
         float nxt_expectation, best_expectation = _set_predict_get_value(goals_2D, scores, selected_points, kwargs)
-        np.ndarray[np.float32_t, ndim = 2] nxt_points = np.zeros((6, 2), dtype=np.float32)
+        np.ndarray[np.float32_t, ndim = 2] nxt_points = np.zeros((mode_num, 2), dtype=np.float32)
         np.ndarray[np.float32_t, ndim = 2] best_points = selected_points.copy()
 
     if kwargs is not None and 'dynamic_label-double' in kwargs:
         num_step = 200
 
     for step in range(num_step):
-        for j in range(6):
+        for j in range(mode_num):
             nxt_points[j, 0] = selected_points[j, 0]
             nxt_points[j, 1] = selected_points[j, 1]
 
         if True:
             while True:
                 ok = 0
-                for j in range(6):
+                for j in range(mode_num):
                     if get_rand(0.0, 1.0) < 0.5:
                         nxt_points[j, 0] += get_rand(-lr, lr)
                         nxt_points[j, 1] += get_rand(-lr, lr)
@@ -411,7 +415,7 @@ def _set_predict_next_step(np.ndarray[np.float32_t, ndim=2] goals_2D,
         nxt_expectation = _set_predict_get_value(goals_2D, scores, nxt_points, kwargs)
         if nxt_expectation < best_expectation:
             best_expectation = nxt_expectation
-            for j in range(6):
+            for j in range(mode_num):
                 best_points[j, 0], best_points[j, 1] = nxt_points[j, 0], nxt_points[j, 1]
 
     return nxt_expectation, best_points

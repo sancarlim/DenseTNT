@@ -30,7 +30,7 @@ class NewSubGraph(nn.Module):
         # input_list: [n vectors in batch i, hidden_size] includes all the sub-graphs (agents and polylines)
         batch_size = len(input_list) # N polylines in batch
         device = input_list[0].device
-        hidden_states, lengths = utils.merge_tensors(input_list, device) # [N polylines, max(length), hidden_size]
+        hidden_states, lengths = utils.merge_tensors(input_list, device) # [N polylines, max(length) T, hidden_size]
         hidden_size = hidden_states.shape[2]
         max_vector_num = hidden_states.shape[1]
 

@@ -48,7 +48,7 @@ class Decoder(nn.Module):
 
         self.decoder = DecoderRes(hidden_size, out_features=2)
 
-        if 'variety_loss' in args.other_params:
+        if 'variety_loss' in args.other_params: #NO
             self.variety_loss_decoder = DecoderResCat(hidden_size, hidden_size, out_features=6 * self.future_frame_num * 2)
 
             if 'variety_loss-prob' in args.other_params:
@@ -93,7 +93,7 @@ class Decoder(nn.Module):
     def goals_2D_per_example_stage_one(self, i, mapping, lane_states_batch, inputs, inputs_lengths,
                                        hidden_states, device, loss):
         def get_stage_one_scores():
-            stage_one_hidden = lane_states_batch[i]
+            stage_one_hidden = lane_states_batch[i] # (N polylines in batch i, hidden_size)
             stage_one_hidden_attention = self.stage_one_cross_attention(
                 stage_one_hidden.unsqueeze(0), inputs[i][:inputs_lengths[i]].unsqueeze(0)).squeeze(0)
             stage_one_scores = self.stage_one_decoder(torch.cat([hidden_states[i, 0, :].unsqueeze(0).expand(
@@ -102,7 +102,7 @@ class Decoder(nn.Module):
             stage_one_scores = F.log_softmax(stage_one_scores, dim=-1)
             return stage_one_scores
 
-        stage_one_scores = get_stage_one_scores()
+        stage_one_scores = get_stage_one_scores() # (N polylines in batch i, 1) scores per polyline (lane selection?)
         assert len(stage_one_scores) == len(mapping[i]['polygons'])
         mapping[i]['stage_one_scores'] = stage_one_scores
         # print('stage_one_scores', stage_one_scores.requires_grad)
@@ -241,7 +241,7 @@ class Decoder(nn.Module):
             self.run_set_predict(goals_2D, scores, mapping, device, loss, i)
             if args.visualize:
                 set_predict_ans_points = mapping[i]['set_predict_ans_points']
-                predict_trajs = np.zeros((6, self.future_frame_num, 2))
+                predict_trajs = np.zeros((args.mode_num, self.future_frame_num, 2))
                 predict_trajs[:, -1, :] = set_predict_ans_points
 
         else:
@@ -256,7 +256,7 @@ class Decoder(nn.Module):
     def goals_2D_eval(self, batch_size, mapping, labels, hidden_states, inputs, inputs_lengths, device):
         if 'set_predict' in args.other_params:
             pred_goals_batch = [mapping[i]['set_predict_ans_points'] for i in range(batch_size)]
-            pred_probs_batch = np.zeros((batch_size, 6))
+            pred_probs_batch = np.zeros((batch_size, args.mode_num))
         elif 'optimization' in args.other_params:
             pred_goals_batch, pred_probs_batch = utils.select_goals_by_optimization(
                 np.array(labels).reshape([batch_size, self.future_frame_num, 2]), mapping)
@@ -294,10 +294,12 @@ class Decoder(nn.Module):
             pass
         if args.visualize:
             for i in range(batch_size):
+                # if mapping[i]['file_name'].split('/')[-1] in [ '13673.csv']: # '33255.csv', '13673.csv','28482.csv','23937.csv','24953.csv'
+                mapping[i]['element_in_batch'] = i
                 utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
-                                         labels=mapping[i]['vis.labels'],
-                                         labels_is_valid=mapping[i]['vis.labels_is_valid'],
-                                         predict=mapping[i]['vis.predict_trajs'])
+                                        labels=mapping[i]['vis.labels'],
+                                        labels_is_valid=mapping[i]['vis.labels_is_valid'],
+                                        predict=mapping[i]['vis.predict_trajs'])
 
         return pred_trajs_batch, pred_probs_batch, None
 
@@ -316,7 +318,7 @@ class Decoder(nn.Module):
             pred_probs = F.log_softmax(outputs[:, -6:], dim=-1)
             outputs = outputs[:, :-6].view([batch_size, 6, self.future_frame_num, 2])
         else:
-            outputs = outputs.view([batch_size, 6, self.future_frame_num, 2])
+            outputs = outputs.view([batch_size, args.mode_num, self.future_frame_num, 2])
 
         for i in range(batch_size):
             if args.do_train:
@@ -346,7 +348,7 @@ class Decoder(nn.Module):
                 inputs_lengths: List[int], hidden_states: Tensor, device):
         """
         :param lane_states_batch: each value in list is hidden states of lanes (value shape ['lane num', hidden_size])
-        :param inputs: hidden states of all elements before encoding by global graph (shape [batch_size, 'element num', hidden_size])
+        :param inputs: hidden states of all elements before encoding by global graph (shape [batch_size, 'max element num', hidden_size])
         :param inputs_lengths: valid element number of each example
         :param hidden_states: hidden states of all elements after encoding by global graph (shape [batch_size, 'element num', hidden_size])
         """
@@ -359,7 +361,7 @@ class Decoder(nn.Module):
             return self.variety_loss(mapping, hidden_states, batch_size, inputs, inputs_lengths, labels_is_valid, loss, DE, device, labels)
         elif 'goals_2D' in args.other_params:
             for i in range(batch_size):
-                goals_2D = mapping[i]['goals_2D']
+                goals_2D = mapping[i]['goals_2D']  # N, 2
 
                 self.goals_2D_per_example(i, goals_2D, mapping, lane_states_batch, inputs, inputs_lengths,
                                           hidden_states, labels, labels_is_valid, device, loss, DE)
@@ -381,6 +383,7 @@ class Decoder(nn.Module):
                 if args.visualize:
                     for i in range(batch_size):
                         predict = np.zeros((self.mode_num, self.future_frame_num, 2))
+                        mapping[i]['element_in_batch'] = i
                         utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'],
                                                  self.future_frame_num,
                                                  labels=mapping[i]['vis.labels'],
@@ -468,7 +471,7 @@ class Decoder(nn.Module):
 
                     decoding = decoder(torch.cat([torch.max(encoding, dim=0)[0], torch.mean(encoding, dim=0)], dim=-1)).view([13])
                     group_scores[k] = decoding[0]
-                    predict = decoding[1:].view([6, 2])
+                    predict = decoding[1:].view([args.mode_num, 2])
 
                     predict[:, 0] += goals_2D[max_point_idx, 0]
                     predict[:, 1] += goals_2D[max_point_idx, 1]

@@ -104,23 +104,23 @@ def gather_and_output_others(args, device, queue, motion_metrics):
 
 
 def single2joint(pred_trajectory, pred_score, args):
-    assert pred_trajectory.shape == (2, 6, args.future_frame_num, 2)
+    assert pred_trajectory.shape == (2, args.mode_num, args.future_frame_num, 2)
     assert np.all(pred_score < 0)
     pred_score = np.exp(pred_score)
     li = []
     scores = []
-    for i in range(6):
-        for j in range(6):
+    for i in range(args.mode_num):
+        for j in range(args.mode_num):
             score = pred_score[0, i] * pred_score[0, j]
             scores.append(score)
             li.append((score, i, j))
 
     argsort = np.argsort(-np.array(scores))
 
-    pred_trajectory_joint = np.zeros((6, 2, args.future_frame_num, 2))
-    pred_score_joint = np.zeros(6)
+    pred_trajectory_joint = np.zeros((args.mode_num, 2, args.future_frame_num, 2))
+    pred_score_joint = np.zeros(args.mode_num)
 
-    for k in range(6):
+    for k in range(args.mode_num):
         score, i, j = li[argsort[k]]
         pred_trajectory_joint[k, 0], pred_trajectory_joint[k, 1] = pred_trajectory[0, i], pred_trajectory[1, j]
         pred_score_joint[k] = score
@@ -129,11 +129,11 @@ def single2joint(pred_trajectory, pred_score, args):
 
 
 def pair2joint(pred_trajectory, pred_score, args):
-    assert pred_trajectory.shape == (2, 6, args.future_frame_num, 2)
+    assert pred_trajectory.shape == (2, args.mode_num, args.future_frame_num, 2)
 
-    pred_trajectory_joint = np.zeros((6, 2, args.future_frame_num, 2))
-    pred_score_joint = np.zeros(6)
-    for k in range(6):
+    pred_trajectory_joint = np.zeros((args.mode_num, 2, args.future_frame_num, 2))
+    pred_score_joint = np.zeros(args.mode_num)
+    for k in range(args.mode_num):
         assert utils.equal(pred_score[0, k], pred_score[1, k])
         pred_trajectory_joint[k, 0] = pred_trajectory[0, k]
         pred_trajectory_joint[k, 1] = pred_trajectory[1, k]
@@ -329,3 +329,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+""" 
+OUTPUT_DIR=models.densetnt.2; GPU_NUM=4; python src/run.py --argoverse --future_frame_num 30   --do_train --data_dir /media/14TBDISK/sandra/argodataset/train/data/ --output_dir ${OUTPUT_DIR}   --hidden_size 128 --train_batch_size 64 --use_map   --core_num 16 --use_centerline --distributed_training ${GPU_NUM}   --other_params     semantic_lane direction l1_loss     goals_2D enhance_global_graph subdivide lazy_points new laneGCN point_sub_graph     stage_one stage_one_dynamic=0.95 laneGCN-4 point_level-4-3 complete_traj complete_traj-3 
+"""

@@ -22,7 +22,7 @@ tqdm = partial(tqdm, dynamic_ncols=True)
 def eval_instance_argoverse(batch_size, args, pred, mapping, file2pred, file2labels, DEs, iter_bar):
     for i in range(batch_size):
         a_pred = pred[i]
-        assert a_pred.shape == (6, args.future_frame_num, 2)
+        assert a_pred.shape == (args.mode_num, args.future_frame_num, 2)
         file_name_int = int(os.path.split(mapping[i]['file_name'])[1][:-4])
         file2pred[file_name_int] = a_pred
         if not args.do_test:
@@ -55,7 +55,7 @@ def do_eval(args):
     eval_sampler = SequentialSampler(eval_dataset)
     eval_dataloader = torch.utils.data.DataLoader(eval_dataset, batch_size=args.eval_batch_size,
                                                   sampler=eval_sampler,
-                                                  collate_fn=utils.batch_list_to_batch_tensors,
+                                                  collate_fn=utils.batch_list_to_batch_tensors, 
                                                   pin_memory=False)
     model = VectorNet(args)
     print('torch.cuda.device_count', torch.cuda.device_count())
@@ -88,8 +88,8 @@ def do_eval(args):
         mapping = batch
         batch_size = pred_trajectory.shape[0]
         for i in range(batch_size):
-            assert pred_trajectory[i].shape == (6, args.future_frame_num, 2)
-            assert pred_score[i].shape == (6,)
+            assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
+            assert pred_score[i].shape == (args.mode_num,)
             argo_pred[mapping[i]['file_name']] = structs.MultiScoredTrajectory(pred_score[i].copy(), pred_trajectory[i].copy())
 
         if args.argoverse:
