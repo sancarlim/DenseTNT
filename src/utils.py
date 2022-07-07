@@ -28,7 +28,7 @@ from torch import Tensor
 import utils_cython, structs
 
 from argoverse.map_representation.map_api import ArgoverseMap
-from argoverse.utils.centerline_utils import get_centerlines_most_aligned_with_trajectory
+from argoverse.utils.centerline_utils import get_centerlines_most_aligned_with_trajectory, is_overlapping_lane_seq, remove_overlapping_lane_seq
 
 am = ArgoverseMap()
 
@@ -576,8 +576,6 @@ class CustomMarker(Path):
         super().__init__(vertices, codes=svgpath2mpl.parse_path(svg).codes)
 
 
-
-
 def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
                        labels_is_valid=None, predict: np.ndarray = None):
     print('in visualize_goals_2D', mapping['file_name'])
@@ -686,279 +684,312 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
 
     draw_his_trajs()
 
-    if True:
-        if goals_2D is not None:
-            goals_2D = np.array(goals_2D)
-            marker_size = 70
-            plt.scatter(goals_2D[:, 0], goals_2D[:, 1], c=scores, cmap=cmap, norm=sm.norm, s=marker_size, alpha=0.5, marker=',')
-        # s is size, default 20
+    if goals_2D is not None:
+        goals_2D = np.array(goals_2D)
+        marker_size = 70
+        plt.scatter(goals_2D[:, 0], goals_2D[:, 1], c=scores, cmap=cmap, norm=sm.norm, s=marker_size, alpha=0.5, marker=',')
+    # s is size, default 20
 
-        # if False:
-        lanes = [] 
-        lanes_dir = []
-        agent_lanes_dir = []
-        distances_list = []
-        confidences = []
-        goals = np.empty((len(predict),2))
+    # if False:
+    lanes = [] 
+    lanes_dir = []
+    agent_lanes_dir = []
+    distances_list = []
+    closest_point_per_lane_list = []
+    confidences = []
+    goals = np.empty((len(predict),2))
 
-        clusters = [] # goal clusters
-        cluster_lanes = [] # lanes of each cluster        
+    clusters = [] # goal clusters
+    cluster_lanes = [] # lanes of each cluster        
 
-        for m, each in enumerate(predict):
-            function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
-                                 linewidth=linewidth,
-                                 zorder=0, label='Predicted trajectory')
+    ax = plt.gca()
+    for m, each in enumerate(predict):
+        function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
+                                linewidth=linewidth,
+                                zorder=0, label='Predicted trajectory')
 
-            goals[m] = [each[-1,0], each[-1,1]]
-            if add_end:
-                plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
-                         markeredgecolor='black')
-            
-            # Compute trajectory direction
-            agent_vector_dir = each[-1] - each[-4]
-            agent_dir = np.arctan2(agent_vector_dir[1],agent_vector_dir[0])
-
-            # Transform point to original coordinate
-            to_origin_coordinate(each[-1:], mapping['element_in_batch'])
-
-            # Find nearest centerline to the end point for subsequent clustering
-            name_fig_lanes = os.path.join(args.log_dir, 'visualize_' + time_begin, f"lanes_mode{m}_"+ name.split('.')[0] + ".png")
-            os.makedirs(os.path.join(args.log_dir, 'visualize_' + time_begin), exist_ok=True)
-            lane_id, conf, lines, distances = am.get_nearest_centerline((each[-1]), visualize=False, name=name_fig_lanes ,city_name=mapping["city_name"]) 
-            ids_list = []  
-            lane_dir = [] 
-            agent_lane_angle_list = []
-            closest_point_per_lane = []
-            for i, line in enumerate(lines): 
-                # Convert to relative coorinates to be in the same frame as the trajectory
-                to_relative_coordinate(line, mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
-                # Compute lane direction
-                # compute norms to waypoints
-                closest_waypt_indxs = np.linalg.norm(line - each[-1], axis=1).argsort()[:2]
-                closest_point_per_lane.append(line[closest_waypt_indxs[0]])
-                # Compute lane direction (as a vector)
-                prev_waypoint_id = closest_waypt_indxs.min()
-                next_waypoint_id = closest_waypt_indxs.max()
-                prev_waypoint = line[prev_waypoint_id]
-                next_waypoint = line[next_waypoint_id]
-                lane_dir_vector = next_waypoint - prev_waypoint 
-                lane_dir.append(lane_dir_vector)
-                #Visualize line directions
-                if True:
-                    #plt.figure(1)
-                    plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
-                            linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
-                    plt.scatter(
-                        prev_waypoint[0],
-                        prev_waypoint[1],
-                        200,
-                        marker=".",
-                        color="b",
-                    )
-                    dx = lane_dir_vector[0] * 10
-                    dy = lane_dir_vector[1] * 10
-                    plt.arrow(
-                        prev_waypoint[0],
-                        prev_waypoint[1],
-                        dx,
-                        dy,
-                        color="r",
-                        width=0.3,
-                        zorder=2,
-                    )
-                    centerline_length = line.shape[0]
-                    for j in range(centerline_length):
-                        plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
-                    plt.axis("equal") 
-                    plt.show()
-                # Compute angle between agent and lane
-                agent_lane_angle = abs( agent_dir - np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) )
-                #np.arccos(np.dot(agent_dir_vector, lane_dir_vectors[i]) / (np.linalg.norm(agent_dir_vector) * np.linalg.norm(lane_dir_vectors[i])))
-                if agent_lane_angle < np.pi / 4: 
-                    agent_lane_angle_list.append(agent_lane_angle)
-                    ids_list.append(i) 
-            #plt.close(1)
-            #plt.figure(0)
-            if len(ids_list) > 0: 
-                lane_id, conf, lines, lane_dir, distances, closest_point_per_lane = [lane_id[i] for i in ids_list], conf[ids_list], [lines[i] for i in ids_list], \
-                                                [lane_dir[i] for i in ids_list], [distances[i] for i in ids_list], [closest_point_per_lane[i] for i in ids_list]
-                
-                # Soft clustering into intention-modes with lanes
-                # If goals share at least one lane, then they are in the same cluster
-                # compute distances among all the closest_point_per_lane themselves 
-                lanes_m = []
-                if len(lane_id) == 1:
-                    lanes_m.append(lane_id) 
-                else:
-                # check if lanes should be in different clusters
-                    i=0#for i in range(len(lane_id)-1):
-                    for j in range(i+1, len(lane_id)):
-                        # if distance is bigger than 1m, then lanes are in different clusters 
-                        if np.linalg.norm(closest_point_per_lane[i] - closest_point_per_lane[j]) > 4: 
-                            if len(lanes_m) == 0:
-                                lanes_m.append(lane_id[:j])
-                                lanes_m.append(lane_id[j:j+1])  
-                            else:
-                                included = False
-                                for k in range(i+2,j):
-                                    if np.linalg.norm(closest_point_per_lane[j] - closest_point_per_lane[k]) < 4:
-                                        for kidx, lanem in enumerate(lanes_m):
-                                            if lane_id[k] in lanem and lane_id[j] not in lanem:   
-                                                lanes_m[kidx].append(lane_id[j])
-                                                included=True
-                                                break
-                                        break
-                                if not included and len(range(i+2,j)) != 0:
-                                    lanes_m.append(lane_id[j:j+1])
-                        else:
-                            if len(lanes_m) == 0:
-                                lanes_m.append(lane_id[i:j]) 
-                                lanes_m.append(lane_id[j:j+1])  
-                            else:
-                                lanes_m[i].append(lane_id[j])
-                            """ if j == len(lane_id)-1:
-                                if len(lanes_m) == 0:
-                                    lanes_m.append(lane_id) 
-                                else:
-                                    for k in range(i,j):
-                                        included = False
-                                        if np.linalg.norm(closest_point_per_lane[j] - closest_point_per_lane[k]) < 4:
-                                            for kidx, lanem in enumerate(lanes_m):
-                                                if lane_id[k] in lanem: 
-                                                    lanes_m[kidx].append(lane_id[j])
-                                                    included = True
-                                                    break 
-                                            break
-                                    if not included:
-                                        lanes_m.append([lane_id[j]])            
-"""
-                if m == 0:
-                    clusters = [set([m]) for i in range(len(lanes_m))] 
-                    cluster_lanes = [set(lm) for lm in lanes_m] 
-                else:
-                    for l_group in lanes_m: 
-                        clusterized = False
-                        # If any lane in l is in cluster_lanes, then they are in the same cluster  
-                        for c_n, lane_cn in enumerate(cluster_lanes):
-                            if any(l_group[i] in lane_cn for i in range(len(l_group))):   
-                                clusters[c_n].update([m])
-                                cluster_lanes[c_n].update(l_group)
-                                clusterized = True
-                                break
-                        if clusterized == False:
-                            clusters.append(set([m]))
-                            cluster_lanes.append(set(l_group))   
-
-                
-                """for i, lane_id in enumerate(lane_id): 
-                    lane_boundary = am.get_lane_segment_polygon(lane_id, mapping['city_name'])[:, :2] 
-                    #check each[-1] inside lane_boundary  and if not, remove it """
-
-                # Plot lines in relative coordinates
-                for line in lines: 
-                    plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], linewidth=linewidth+1, zorder=0.5, label='mode centerline') # plot the centerline
-            else:
-                print("No lanes found with agent_lane_angle < pi/4")
-                lane_id = []
-            
-            lanes.append(lane_id) 
-            lanes_dir.append(lane_dir)
-            agent_lanes_dir.append(agent_lane_angle_list)
-            distances_list.append(distances)
-            confidences.append(scipy.special.softmax(conf)) # softmax to make it probability of belonging to each cluster  
-            
-        def get_lanes_with_different_directions(vecs: list):
-            """Given n lanes' vectors directions compute the angle between them and return the 
-            indexes of those whose angle differs in more than 45 degrees """
-            indexes = []
-            for i in range(len(vecs)): 
-                for j in range(i+1,len(vecs)):
-                    angle_dif = abs( np.arctan2(vecs[i][1],vecs[i][0]) - np.arctan2(vecs[j][1],vecs[j][0]) )
-                    if angle_dif > np.pi / 4:
-                        # lanes i, j have a different direction
-                        indexes.append([i,j])
-            return indexes
-
-        # Cluster the end points into intention-modes with lanes
-        # If goals share at least one lane, then they are in the same cluster
-        """ for mode_i,lanes_per_cluster in enumerate(lanes):
-            
-            if mode_i==0:   
-                clusters.append([mode_i])
-                cluster_lanes.append(set(lanes_per_cluster)) 
-            else:
-                # If any lane in l is in cluster_lanes, then they are in the same cluster 
-                for j in range(len(clusters)):
-                    if any(lanes_per_cluster[i] in cluster_lanes[j] for i in range(len(lanes_per_cluster))):
-                        clusters[j].append(mode_i)
-                        cluster_lanes[j].update(lanes_per_cluster)
-                        clusterized = True
-                        break 
-                if not clusterized:
-                    if len(lanes_per_cluster) != 0:
-                        clusters.append([mode_i])
-                        cluster_lanes.append(set(lanes_per_cluster)) """
-
-        # Find mean and std for the end points of each cluster
-        cluster_avg = []
-        for i,c in enumerate(clusters):
-            cluster_avg.append(np.mean(goals[list(c)], axis=0))
-            # cluster_std.append(goals[c].std(0))
-
-        # Compute probabilities
-        def do_kdtree(combined_x_y_arrays,points):
-            mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
-            dist, indexes = mytree.query(points)
-            return indexes
-        goals2goals2D = [np.array(np.floor(g)) for g in goals]
-        #find the scores for these goals
-        score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
-        goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
-            
-        cluster_probs = [sum(goals_probs[list(c)]) for c in clusters]
-        cmap_cool = plt.get_cmap('cool') 
-        sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool, norm=plt.Normalize(vmin=0, vmax=1)) 
-        plt.colorbar(sm_cool)
-
-        # Plot the cluster end points
-        to_relative_coordinate(predict[:,-1], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  # convert final points to relative coordinates
-        plt.figure(0)
-        for i,c in enumerate(cluster_avg):
-            try:
-                sns.kdeplot(x=goals[list(clusters[i]),0], y=goals[list(clusters[i]),1],
-                                shade=True, thresh=0.05, 
-                                    color=cmap_cool(cluster_probs[i]), zorder=0.5, alpha=0.8)
-            except:
-                pass
-            function3 = plt.plot(c[0], c[1], markersize=6 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="o",
-                     markeredgecolor='black', zorder=10, label='cluster end point')  #line_colors[clusters[i][0]%6]
-
-            # Color final stars with their probability color
-            plt.plot(predict[clusters[i],-1,0], predict[clusters[i],-1,1], markersize=10 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="*",
-                     markeredgecolor='black', linestyle='')
-
+        goals[m] = [each[-1,0], each[-1,1]]
         if add_end:
-            plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
-                     markeredgecolor='black')
+            plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
+                        markeredgecolor='black')
+            ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange")
+        
+        # Compute trajectory direction
+        agent_vector_dir = each[-1] - each[-4]
+        agent_dir = np.arctan2(agent_vector_dir[1],agent_vector_dir[0])
 
+        # Transform point to original coordinate
+        to_origin_coordinate(each[-1:], mapping['element_in_batch'])
+
+        # Find nearest centerline to the end point for subsequent clustering
+        name_fig_lanes = os.path.join(args.log_dir, 'visualize_' + time_begin, f"lanes_mode{m}_"+ name.split('.')[0] + ".png")
+        os.makedirs(os.path.join(args.log_dir, 'visualize_' + time_begin), exist_ok=True)
+        lane_id, conf, lines, distances = am.get_nearest_centerline((each[-1]), visualize=False, name=name_fig_lanes ,city_name=mapping["city_name"]) 
+        to_relative_coordinate(each[-1:], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
+        ids_list = []
+        lane_dir = []
+        agent_lane_angle_list = []
+        closest_point_per_lane = []
+        probability = []
+        for i, line in enumerate(lines): 
+            # Convert to relative coorinates to be in the same frame as the trajectory
+            to_relative_coordinate(line, mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
+            # Compute lane direction
+            # compute norms to waypoints
+            closest_waypt_indxs = np.linalg.norm(line - each[-1], axis=1).argsort()[:2]
+            closest_point_per_lane.append(line[closest_waypt_indxs[0]])
+            # Compute lane direction (as a vector)
+            prev_waypoint_id = closest_waypt_indxs.min()
+            next_waypoint_id = closest_waypt_indxs.max()
+            prev_waypoint = line[prev_waypoint_id]
+            next_waypoint = line[next_waypoint_id]
+            lane_dir_vector = next_waypoint - prev_waypoint 
+            lane_dir.append(lane_dir_vector)
+            #Visualize line directions
+            if True:
+                #plt.figure(1)
+                plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
+                        linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
+                plt.scatter(
+                    prev_waypoint[0],
+                    prev_waypoint[1],
+                    200,
+                    marker=".",
+                    color="b",
+                )
+                dx = lane_dir_vector[0] * 10
+                dy = lane_dir_vector[1] * 10
+                plt.arrow(
+                    prev_waypoint[0],
+                    prev_waypoint[1],
+                    dx,
+                    dy,
+                    color="r",
+                    width=0.3,
+                    zorder=2,
+                )
+                ax.annotate(lane_id[i], (prev_waypoint[0], prev_waypoint[1]))
+                centerline_length = line.shape[0]
+                for j in range(centerline_length):
+                    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
+                plt.axis("equal") 
+                plt.show()
+            # Compute angle between agent and lane
+            agent_lane_angle = abs( agent_dir - np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) )
+            #np.arccos(np.dot(agent_dir_vector, lane_dir_vectors[i]) / (np.linalg.norm(agent_dir_vector) * np.linalg.norm(lane_dir_vectors[i])))
+            if agent_lane_angle < np.pi / 4: 
+                agent_lane_angle_list.append(agent_lane_angle)
+                ids_list.append(i) 
+        #plt.close(1)
+        #plt.figure(0)
+        if len(ids_list) > 0: 
+            lane_id, conf, lines, lane_dir, distances, closest_point_per_lane = [lane_id[i] for i in ids_list], conf[ids_list], [lines[i] for i in ids_list], \
+                                            [lane_dir[i] for i in ids_list], [distances[i] for i in ids_list], [closest_point_per_lane[i] for i in ids_list]
+            conf = scipy.special.softmax(conf)
+            # Soft clustering into intention-modes with lanes
+            # If goals share at least one lane, then they are in the same cluster
+            # compute distances among all the closest_point_per_lane themselves 
+            lanes_m = []
+            if len(lane_id) == 1:
+                lanes_m.append(lane_id)
+                probability = 1.0
+            else:
+            # check if lanes should be in different clusters  
+                for j in range(1, len(lane_id)):
+                    # if distance is bigger than 1m, then lanes are in different clusters 
+                    if np.linalg.norm(closest_point_per_lane[0] - closest_point_per_lane[j]) > 4: 
+                        if len(lanes_m) == 0:
+                            lanes_m.append(lane_id[:j])
+                            lanes_m.append(lane_id[j:j+1])  
+                            probability.append([conf[0]])
+                            probability.append([conf[j]])
+                        else:
+                            included = False
+                            for k in range(2,j):
+                                if np.linalg.norm(closest_point_per_lane[j] - closest_point_per_lane[k]) < 4:
+                                    for kidx, lanem in enumerate(lanes_m):
+                                        if lane_id[k] in lanem and lane_id[j] not in lanem:   
+                                            lanes_m[kidx].append(lane_id[j])
+                                            probability[kidx].append(conf[j])
+                                            included=True
+                                            break
+                                    break
+                            if not included and len(range(2,j)) != 0:
+                                lanes_m.append(lane_id[j:j+1])
+                                probability.append([conf[j]])
+                    else:
+                        if len(lanes_m) == 0:
+                            lanes_m.append(lane_id[:j+1])  
+                            probability.append([conf[:j+1]])
+                            
+                        else:
+                            lanes_m[0].append(lane_id[j])
+                            probability[0].append(conf[j]) 
+                        """if j == len(lane_id)-1: 
+                            for k in range(j):
+                                included = False
+                                if np.linalg.norm(closest_point_per_lane[j] - closest_point_per_lane[k]) < 4:
+                                    for kidx, lanem in enumerate(lanes_m):
+                                        if lane_id[k] in lanem: 
+                                            lanes_m[kidx].append(lane_id[j])
+                                            included = True
+                                            break 
+                                    break
+                            if not included:
+                                lanes_m.append([lane_id[j]])            
+                        """
+            if m == 0:
+                clusters = [set([m]) for i in range(len(lanes_m))] 
+                cluster_lanes = [set(lm) for lm in lanes_m] 
+            else:
+                for l_group in lanes_m: 
+                    clusterized = False
+                    # If any lane in l is in cluster_lanes, then they are in the same cluster  
+                    for c_n, lane_cn in enumerate(cluster_lanes):
+                        if any(l_group[i] in lane_cn for i in range(len(l_group))):   
+                            clusters[c_n].update([m])
+                            cluster_lanes[c_n].update(l_group)
+                            clusterized = True
+                            break
+                    """ while not clusterized:
+                        # check if the lane is close to any of the cluster_lanes, if so, include it in the cluster
+                        for c_n, lane_cn in enumerate(cluster_lanes):
+                            if clusterized == False:
+                                for i in range(len(l_group)): 
+                                    if np.linalg.norm(closest_point_per_lane[l_group[i]] - closest_point_per_lane[lane_cn[0]]) < 2:  
+                                        clusters[c_n].update([m])
+                                        cluster_lanes[c_n].update(l_group)
+                                        clusterized = True  
+                                        break  """
+                    if clusterized == False:
+                        clusters.append(set([m]))
+                        cluster_lanes.append(set(l_group))
+
+            # Plot lines in relative coordinates
+            for line in lines: 
+                plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], linewidth=linewidth+1, zorder=0.5, label='mode centerline') # plot the centerline
+        else:
+            print("No lanes found with agent_lane_angle < pi/4")
+            lane_id = []
+        
+        lanes.append(lane_id) 
+        lanes_dir.append(lane_dir)
+        agent_lanes_dir.append(agent_lane_angle_list)
+        distances_list.append(distances)
+        closest_point_per_lane_list.append(closest_point_per_lane)
+        confidences.append(probability) # softmax to make it probability of belonging to each cluster  
+        
+    def get_lanes_with_different_directions(vecs: list):
+        """Given n lanes' vectors directions compute the angle between them and return the 
+        indexes of those whose angle differs in more than 45 degrees """
+        indexes = []
+        for i in range(len(vecs)): 
+            for j in range(i+1,len(vecs)):
+                angle_dif = abs( np.arctan2(vecs[i][1],vecs[i][0]) - np.arctan2(vecs[j][1],vecs[j][0]) )
+                if angle_dif > np.pi / 4:
+                    # lanes i, j have a different direction
+                    indexes.append([i,j])
+        return indexes
+
+
+    # Compute probabilities
+    def do_kdtree(combined_x_y_arrays,points):
+        mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
+        dist, indexes = mytree.query(points)
+        return indexes
+    goals2goals2D = [np.array(np.floor(g)) for g in goals]
+    #find the scores for these goals
+    score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
+    goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
         
 
-        function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
-                             zorder=0, label='Ground truth trajectory')
+    # Hard clustering - choose the highest probable cluster for each mode
+    hard_clusters = [[] for i in range(len(clusters))]
+    cluster_probs = [0] * len(clusters)
+    max_conf = []
+    for conf in confidences:
+        if conf is not List: 
+            max_conf.append(0)
+        else:
+            max_conf.append(conf.index(max(conf, key=sum))) 
+    count = 0
+    for m in range(len(max_conf)):
+        for j in range(len(clusters)):
+            if m in clusters[j]:
+                # compute the cluster probability taking into account the soft assignment
+                #cluster_probs[j] += goals_probs[m] * confidences[m][j]
+                if count == max_conf[m]:
+                    hard_clusters[j].append(m)
+                    break 
+                count+=1
+    del count
+    """ for mode_i,lanes_per_cluster in enumerate(lanes):
+        
+        if mode_i==0:   
+            clusters.append([mode_i])
+            cluster_lanes.append(set(lanes_per_cluster)) 
+        else:
+            # If any lane in l is in cluster_lanes, then they are in the same cluster 
+            for j in range(len(clusters)):
+                if any(lanes_per_cluster[i] in cluster_lanes[j] for i in range(len(lanes_per_cluster))):
+                    clusters[j].append(mode_i)
+                    cluster_lanes[j].update(lanes_per_cluster)
+                    clusterized = True
+                    break 
+            if not clusterized:
+                if len(lanes_per_cluster) != 0:
+                    clusters.append([mode_i])
+                    cluster_lanes.append(set(lanes_per_cluster)) """
+
+    # Find mean and std for the end points of each cluster
+
+    cluster_avg = []
+    for i,c in enumerate(hard_clusters): 
+        cluster_avg.append(np.mean(goals[list(c)], axis=0))
+        # cluster_std.append(goals[c].std(0))
+
+    cluster_probs = [sum(goals_probs[list(c)]) for c in hard_clusters]
+    cmap_cool = plt.get_cmap('cool') 
+    sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool, norm=plt.Normalize(vmin=0, vmax=1)) 
+    plt.colorbar(sm_cool)
+
+    # Plot the cluster end points
+    #to_relative_coordinate(predict[:,-1], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  # convert final points to relative coordinates
+    plt.figure(0)
+    for i,c in enumerate(cluster_avg):
+        try:
+            sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1],
+                            shade=True, thresh=0.05, color=cmap_cool(cluster_probs[i]), zorder=0.5, alpha=0.8)
+        except:
+            pass
+        function3 = plt.plot(c[0], c[1], markersize=6 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="o",
+                    markeredgecolor='black', zorder=10, label='cluster end point')  #line_colors[clusters[i][0]%6]
+
+        # Color final stars with their probability color
+        plt.plot(predict[list(hard_clusters[i]),-1,0], predict[list(hard_clusters[i]),-1,1], markersize=10 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="*",
+                    markeredgecolor='black', linestyle='') 
+
+    if add_end:
+        plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
+                    markeredgecolor='black')
+
     
-    
+
+    function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
+                            zorder=0, label='Ground truth trajectory')
+
+
     functions = function1 + function2 + function3
     fun_labels = [f.get_label() for f in functions]
     plt.legend(functions, fun_labels, loc=0)
 
     plt.title('FDE={} file_name={}'.format(loss, mapping['file_name']))
-    ax = plt.gca()
     ax.set_aspect(1)
     ax.xaxis.set_major_locator(MultipleLocator(4))
     ax.yaxis.set_major_locator(MultipleLocator(4))
 
     name = os.path.join(args.log_dir, 'visualize_' + time_begin,
-                             get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
+                                get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
     plt.savefig(name, bbox_inches='tight')
     plt.close()
     global visualize_num
