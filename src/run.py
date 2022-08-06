@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from functools import partial
-
+import random
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -16,6 +16,9 @@ from tqdm import tqdm as tqdm_
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 def compile_pyx_files():
     if True:
