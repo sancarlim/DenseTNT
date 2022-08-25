@@ -16,6 +16,7 @@ from random import randint
 from typing import Dict, List, Tuple, NamedTuple, Any, Union, Optional
 import scipy
 import seaborn as sns
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -628,7 +629,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     vmin = np.log(0.00001)
     scores = np.clip(scores.copy(), a_min=vmin, a_max=np.inf)
     sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=np.max(scores)))
-    plt.colorbar(sm)
+    
 
     trajs = mapping['trajs']
     if args.argoverse:
@@ -654,10 +655,12 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     yaw_0 = None
 
     def draw_his_trajs():
+        # Draw history of agents 
         for i, traj in enumerate(trajs):
             assert isinstance(traj, np.ndarray)
             assert traj.ndim == 2 and traj.shape[1] == 2, traj.shape
             if i == 0:
+                # Focal agent
                 traj = np.array(traj).reshape([-1])
                 t = np.zeros(len(traj) + 2)
                 t[:len((traj))] = traj
@@ -669,19 +672,29 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                          linewidth=linewidth,
                          zorder=0)
                 # if 'vis_video' in args.other_params:
-                # plt.plot(0.0, 0.0, marker=CustomMarker("icon", 0), c=target_agent_color,
-                #          markersize=20 * marker_size_scale, markeredgecolor=target_agent_edge_color, markeredgewidth=0.5)
-            else:
-                if True:
-                    pass
-                else:
-                    if len(traj) >= 2:
-                        color = "darkblue"
-                        plt.plot(traj[:, 0], traj[:, 1], linestyle="-", color=color, marker=None,
-                                 alpha=1,
-                                 linewidth=linewidth,
-                                 zorder=0)
+                plt.plot(0.0, 0.0, marker=CustomMarker("icon", 0), c=target_agent_color,
+                         markersize=20 * marker_size_scale, markeredgecolor=target_agent_edge_color, markeredgewidth=0.5)
+            else:  
+                if len(traj) >= 2: 
+                    color = '#ff0000' if i == 1 else "darkblue"
+                    plt.plot(traj[:, 0], traj[:, 1], linestyle="-", color=color, marker=None,
+                                alpha=1,
+                                linewidth=1,
+                                zorder=0)
+                    
+                    circle=plt.Circle((traj[-1, 0],
+                                traj[-1, 1]),
+                                0.3,
+                                facecolor=color,
+                                edgecolor=color,
+                                lw=0.5,
+                                zorder=3)
+                    ax.add_patch(circle)
 
+
+                    
+                    
+    ax = plt.gca() # get current axes instance
     draw_his_trajs()
 
     if goals_2D is not None:
@@ -702,7 +715,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     clusters = [] # goal clusters
     cluster_lanes = [] # lanes of each cluster        
 
-    ax = plt.gca()
+    ax = plt.gca() 
     for m, each in enumerate(predict):
         function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
                                 linewidth=linewidth,
@@ -712,7 +725,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         if add_end:
             plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
                         markeredgecolor='black')
-            ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange")
+            # ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange")
         
         # Compute trajectory direction
         agent_vector_dir = each[-2] - each[-4]
@@ -748,8 +761,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             #Visualize line directions
             if True: 
                 #plt.figure(1)
-                plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
-                        linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
+                # plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
+                #        linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
                 plt.scatter(
                     line[-1][0],
                     line[-1][1],
@@ -769,7 +782,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                     width=0.3,
                     zorder=2,
                 )
-                ax.annotate(lane_id[i], (line[0][0], line[0][1]))
+                # ax.annotate(lane_id[i], (line[0][0], line[0][1]))
                 centerline_length = line.shape[0]
                 for j in range(centerline_length):
                     plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
@@ -924,12 +937,10 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     # cluster_probs = [sum(goals_probs[list(c)]) for c in hard_clusters] 
     cmap_cool = plt.get_cmap('cool')
     sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool , norm=plt.Normalize(vmin=0, vmax=1)) 
-    cbar_cool = plt.colorbar(sm_cool)
-    cbar_cool.set_label('Probability of each cluster', rotation=270)
+    
     cmap_bupu = plt.get_cmap('BuPu')
     sm_bupu = plt.cm.ScalarMappable(cmap=cmap_bupu , norm=plt.Normalize(vmin=0, vmax=1)) 
-    cbar_bupu = plt.colorbar(sm_bupu)
-    cbar_bupu.set_label('Probability of each goal', rotation=270)
+    
     # Plot the cluster end points
     #to_relative_coordinate(predict[:,-1], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  # convert final points to relative coordinates
     plt.figure(0)
@@ -951,7 +962,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
                     markeredgecolor='black')
 
-    
+
 
     function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
                             zorder=0, label='Ground truth trajectory')
@@ -966,6 +977,13 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     ax.xaxis.set_major_locator(MultipleLocator(4))
     ax.yaxis.set_major_locator(MultipleLocator(4))
 
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    plt.colorbar(sm, cax=cax)
+    cbar_bupu = plt.colorbar(sm_bupu, cax=divider.append_axes("right", size="5%", pad=0.09))
+    cbar_bupu.set_label('Probability of each goal', rotation=270, )
+    cbar_cool = plt.colorbar(sm_cool, cax=divider.append_axes("right", size="5%", pad=0.13))
+    cbar_cool.set_label('Probability of each cluster', rotation=270)
     name = os.path.join(args.log_dir, 'visualize_' + time_begin,
                                 get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
     plt.savefig(name, bbox_inches='tight')
