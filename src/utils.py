@@ -633,12 +633,11 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
 
     trajs = mapping['trajs']
     if args.argoverse:
-        name = os.path.split(mapping['file_name'])[1].split('.')[0] 
-    name = name + '.FDE={}'.format(loss)
+        name = os.path.split(mapping['file_name'])[1].split('.')[0]  
 
-    add_end = True
+    add_end = False
 
-    linewidth = 5
+    linewidth = 3
 
     for lane in mapping['vis_lanes']:
         lane = lane[:, :2]
@@ -670,16 +669,40 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 plt.plot(t[0::2], t[1::2], linestyle="-", color=target_agent_color, marker=None,
                          alpha=1,
                          linewidth=linewidth,
-                         zorder=0)
+                         zorder=100)
                 # if 'vis_video' in args.other_params:
                 plt.plot(0.0, 0.0, marker=CustomMarker("icon", 0), c=target_agent_color,
                          markersize=20 * marker_size_scale, markeredgecolor=target_agent_edge_color, markeredgewidth=0.5)
-            else:  
-                if len(traj) >= 2: 
-                    color = '#ff0000' if i == 1 else "darkblue"
+            elif i == 1:
+                    # AV
+                    color = '#ff0000'
+                    width = 3 
                     plt.plot(traj[:, 0], traj[:, 1], linestyle="-", color=color, marker=None,
                                 alpha=1,
-                                linewidth=1,
+                                linewidth=width,
+                                zorder=0)
+                    # compute yaw
+                    yaw = np.arctan2(traj[-2, 1] - traj[0, 1], traj[-2, 0] - traj[0, 0]) - math.pi/2 
+                    if name == '3638':
+                        yaw = math.pi/2
+                    # Compute yaw using direction of the closest lane
+                    # Transform point to original coordinate
+                    # Find the closest lane
+                    """to_origin_coordinate(traj[-1:], mapping['element_in_batch'])
+                    lane_id, conf, lines, distances = am.get_nearest_centerline((traj[-1]), visualize=False, city_name=mapping["city_name"]) 
+                    to_relative_coordinate(lines[conf.argmax()],  mapping['cent_x'],mapping['cent_y'],mapping['angle'])
+                    lane_dir_vector = am.get_lane_direction(lines[conf.argmax()], (traj[-2]), mapping["city_name"])
+                    # compute yaw
+                    yaw = np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) """
+                    plt.plot(traj[-2, 0], traj[-2, 1], marker=CustomMarker("icon", yaw), c=color,
+                        markersize=20 * marker_size_scale, markeredgecolor=color, markeredgewidth=0.5) 
+            else:
+                if len(traj) >= 2: 
+                    color = '#ff0000' if i == 1 else "darkblue"
+                    width = 3 if i == 1 else 1
+                    plt.plot(traj[:, 0], traj[:, 1], linestyle="-", color=color, marker=None,
+                                alpha=1,
+                                linewidth=width,
                                 zorder=0)
                     
                     circle=plt.Circle((traj[-1, 0],
@@ -709,19 +732,37 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     agent_lanes_dir = []
     distances_list = []
     closest_point_per_lane_list = []
-    confidences = []
-    goals = np.empty((len(predict),2))
+    confidences = [] 
 
+    # Compute probabilities
+    goals = [[each[-1,0], each[-1,1]] for each in predict]
+    def do_kdtree(combined_x_y_arrays,points):
+        mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
+        dist, indexes = mytree.query(points)
+        return indexes
+    goals2goals2D = [np.array(np.floor(g)) for g in goals]
+    #find the scores for these goals
+    score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
+    goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
+    # order predict by probabilities
+    goals_probs_ids = np.argsort(goals_probs)[::-1]
+    predict_ordered = [predict[i] for i in goals_probs_ids]
+    goals = np.array([goals[i] for i in goals_probs_ids])
+    goals_probs_ordered = [goals_probs[i] for i in goals_probs_ids]
+    
     clusters = [] # goal clusters
     cluster_lanes = [] # lanes of each cluster        
 
     ax = plt.gca() 
-    for m, each in enumerate(predict):
-        function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color="darkorange", marker=None,
-                                linewidth=linewidth,
-                                zorder=0, label='Predicted trajectory')
+    modes_viz = 12 
+    
+    cmap_cool = plt.get_cmap('cool')
+    sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool , norm=plt.Normalize(vmin=0, vmax=1)) 
+    
+    for m, each in enumerate(predict_ordered[:modes_viz]):
+        function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=cmap_cool(goals_probs_ordered[m]*5),
+                             marker=None, linewidth=linewidth, zorder=1, label='Predicted trajectory')
 
-        goals[m] = [each[-1,0], each[-1,1]]
         if add_end:
             plt.plot(each[-1, 0], each[-1, 1], markersize=9 * marker_size_scale, color="darkorange", marker="*",
                         markeredgecolor='black')
@@ -784,8 +825,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 )
                 # ax.annotate(lane_id[i], (line[0][0], line[0][1]))
                 centerline_length = line.shape[0]
-                for j in range(centerline_length):
-                    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
+                #for j in range(centerline_length):
+                #    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k")
                 plt.axis("equal") 
                 plt.show()
             # Compute angle between agent and lane
@@ -883,32 +924,18 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                     indexes.append([i,j])
         return indexes
 
-
-    # Compute probabilities
-    def do_kdtree(combined_x_y_arrays,points):
-        mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
-        dist, indexes = mytree.query(points)
-        return indexes
-    goals2goals2D = [np.array(np.floor(g)) for g in goals]
-    #find the scores for these goals
-    score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
-    goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
         
 
     # Hard clustering - choose the highest probable cluster for each mode
     hard_clusters = [[] for i in range(len(clusters))]
-    cluster_probs = [0] * len(clusters)
-    #find max value inside list of lists    
-    """ def max_value_idx(list):  
-        return np.array([max(sublist) for sublist in list]).argmax()
-    max_conf_idx = [max_value_idx(conf) if len(conf)>1 else 0 for conf in confidences ] """ 
+    cluster_probs = [0] * len(clusters) 
     max_conf_idx = [(np.array(conf)).argmax() if len(conf)>1 else 0 for conf in confidences] 
     
     for m in range(len(max_conf_idx)):
         for i, lanem in enumerate(lanes[m]):
             for j in range(len(clusters)):
                 if lanem in cluster_lanes[j]:
-                    cluster_probs[j] += goals_probs[m]*confidences[m][i] 
+                    cluster_probs[j] += goals_probs_ordered[m]*confidences[m][i] 
                     if i == max_conf_idx[m]:
                         hard_clusters[j].append(m)
     
@@ -920,7 +947,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 # compute the cluster probability taking into account the soft assignment 
                 if count == max_conf_idx[m]:
                     hard_clusters[j].append(m)
-                    cluster_probs[j] += goals_probs[m]*confidences[m][max_conf_idx[m]][0]
+                    cluster_probs[j] += goals_probs_ordered[m]*confidences[m][max_conf_idx[m]][0]
                     # cluster_goals[j] += goals[m]*confidences[m][count][0]
                     count=0
                     break 
@@ -931,33 +958,34 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     #cluster_std = [np.std(cluster_goals[j]) for j in range(len(clusters))]
     cluster_avg = []
     for i,c in enumerate(hard_clusters): 
-        cluster_avg.append(np.mean(goals[list(c)], axis=0))
+        cluster_avg.append(np.mean(goals[c], axis=0))
         # cluster_std.append(goals[c].std(0))
 
-    # cluster_probs = [sum(goals_probs[list(c)]) for c in hard_clusters] 
-    cmap_cool = plt.get_cmap('cool')
-    sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool , norm=plt.Normalize(vmin=0, vmax=1)) 
-    
-    cmap_bupu = plt.get_cmap('BuPu')
+    # cluster_probs = [sum(goals_probs_ordered[list(c)]) for c in hard_clusters] 
+
+    cmap_bupu = plt.get_cmap('BuPu', )
     sm_bupu = plt.cm.ScalarMappable(cmap=cmap_bupu , norm=plt.Normalize(vmin=0, vmax=1)) 
     
     # Plot the cluster end points
     #to_relative_coordinate(predict[:,-1], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  # convert final points to relative coordinates
     plt.figure(0)
-    for i,c in enumerate(cluster_avg):
-        try:
-            sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm,
-                            shade=True, thresh=0.05, color=cmap_cool(cluster_probs[i]), zorder=0.5, alpha=0.8, bw_adjust=.6)
-        except:
-            pass
-        function3 = plt.plot(c[0], c[1], markersize=6 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="o", 
-                    markeredgecolor='black', zorder=10, label='cluster end point')  #line_colors[clusters[i][0]%6]
+    if modes_viz != 1:
+        for i,c in enumerate(cluster_avg):
+            try:
+                sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm,
+                                fill=True, thresh=0.05, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1),zorder=0.5, alpha=1, bw_adjust=.6)
+            except:
+                pass
+            function3 = plt.plot(c[0], c[1], markersize=6 * marker_size_scale, color=cmap_cool(cluster_probs[i]), marker="o", 
+                        markeredgecolor='black', zorder=200, label='cluster end point')  #line_colors[clusters[i][0]%6]
+            
 
-        # Color final stars with their probability color
-        for n_g, goal in enumerate(predict[list(hard_clusters[i]),-1]):
-            plt.plot(goal[0], goal[1], markersize=10 * marker_size_scale, color=cmap_bupu(5*goals_probs[hard_clusters[i][n_g]]), marker="*",
-                    markeredgecolor='black', linestyle='') 
-
+            # Color final stars with their probability color
+            if add_end:
+                for n_g, goal in enumerate(predict[list(hard_clusters[i]),-1]):
+                    plt.plot(goal[0], goal[1], markersize=10 * marker_size_scale, color=cmap_bupu(5*goals_probs_ordered[hard_clusters[i][n_g]]), marker="*",
+                            markeredgecolor='black', linestyle='') 
+        function2 = function2 + function3
     if add_end:
         plt.plot(labels[-2], labels[-1], markersize=10 * marker_size_scale, color=target_agent_color, marker="*",
                     markeredgecolor='black')
@@ -965,10 +993,10 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
 
 
     function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
-                            zorder=0, label='Ground truth trajectory')
+                            zorder=100, label='Ground truth trajectory')
 
 
-    functions = function1 + function2 + function3
+    functions = function1 + function2  
     fun_labels = [f.get_label() for f in functions]
     plt.legend(functions, fun_labels, loc=0)
 
@@ -977,13 +1005,15 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     ax.xaxis.set_major_locator(MultipleLocator(4))
     ax.yaxis.set_major_locator(MultipleLocator(4))
 
+    
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    plt.colorbar(sm, cax=cax)
-    cbar_bupu = plt.colorbar(sm_bupu, cax=divider.append_axes("right", size="5%", pad=0.09))
-    cbar_bupu.set_label('Probability of each goal', rotation=270, )
-    cbar_cool = plt.colorbar(sm_cool, cax=divider.append_axes("right", size="5%", pad=0.13))
-    cbar_cool.set_label('Probability of each cluster', rotation=270)
+    cax = divider.append_axes("right", size="5%", pad=0.3)
+    cbar=plt.colorbar(sm, cax=cax)
+    cbar_bupu = plt.colorbar(sm_bupu, cax=divider.append_axes("right", size="5%", pad=0.6))
+    cbar_bupu.set_label('Probability of each goal', rotation=270,size=15,weight='bold')
+    cbar.set_label('Probability scores', rotation=270,size=15,weight='bold')
+    cbar_cool = plt.colorbar(sm_cool, cax=divider.append_axes("right", size="5%", pad=0.9))
+    cbar_cool.set_label('Probability of each cluster', rotation=270,size=15,weight='bold')
     name = os.path.join(args.log_dir, 'visualize_' + time_begin,
                                 get_name("visualize" + ("" if name == "" else "_" + name) + ".png"))
     plt.savefig(name, bbox_inches='tight')
