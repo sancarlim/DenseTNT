@@ -617,7 +617,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     target_agent_color, target_agent_edge_color = '#4bad34', '#c5dfb3' #green 
     plt.cla()
     sns.set()
-    fig = plt.figure(0, figsize=(50.0,50.0))
+    fig = plt.figure(0, figsize=(50.0,50.0)) 
 
     plt.xlim(-40, 40)
     plt.ylim(-30, 50)
@@ -662,8 +662,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                          linewidth=linewidth+1,
                          zorder=100)
                 # if 'vis_video' in args.other_params:
-                plt.plot(0.0, 0.0, marker=CustomMarker("icon", 0), c=target_agent_color,
-                         markersize=marker_size , markeredgecolor=target_agent_edge_color, markeredgewidth=0.5)
+                ax.plot(0.0, 0.0, marker=CustomMarker("icon", 0), c=target_agent_color,
+                         markersize=marker_size , markeredgecolor=target_agent_edge_color, markeredgewidth=0.5, label = 'Focal Agent')
             elif i == 1:
                     # AV
                     color = '#ff0000'
@@ -685,15 +685,18 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                     lane_dir_vector = am.get_lane_direction(lines[conf.argmax()], (traj[-2]), mapping["city_name"])
                     # compute yaw
                     yaw = np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) """
-                    plt.plot(traj[-2, 0], traj[-2, 1], marker=CustomMarker("icon", yaw), c=color,
-                        markersize=marker_size, markeredgecolor=color, markeredgewidth=0.5) 
+                    ax.plot(traj[-2, 0], traj[-2, 1], marker=CustomMarker("icon", yaw), c=color,
+                        markersize=marker_size, markeredgecolor=color, markeredgewidth=0.5, label = 'AV') 
             else:
                 if len(traj) >= 2: 
                     color = "darkblue" 
+                    label = None 
+                    if i == 2:
+                        label = 'Other Agents'
                     plt.plot(traj[:, 0], traj[:, 1], linestyle="-", color=color, marker=None,
                                 alpha=1,
                                 linewidth=linewidth,
-                                zorder=0)
+                                zorder=0, label=label)
                     
                     circle=plt.Circle((traj[-1, 0],
                                 traj[-1, 1]),
@@ -707,7 +710,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     ax = plt.gca() # get current axes instance
     draw_his_trajs()
     if add_end:  
-        plt.plot(labels[-2], labels[-1], markersize=50, color=target_agent_color, marker="*",
+        ax.plot(labels[-2], labels[-1], markersize=50, color=target_agent_color, marker="*",
                     markeredgecolor='black')
 
     function1 = plt.plot(labels[0::2], labels[1::2], linestyle="-", color=target_agent_color, linewidth=linewidth,
@@ -716,7 +719,6 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     name = os.path.join(args.log_dir, 'visualize_' + time_begin,
                                 get_name("visualize" + ("" if name == "" else "_" + name) + "_no-pred.png"))
 
-    plt.savefig(name, bbox_inches='tight')
 
     if False: #goals_2D is not None:
         goals_2D = np.array(goals_2D)
@@ -752,30 +754,9 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         cmap_cool = plt.get_cmap('cool')
         sm_cool = plt.cm.ScalarMappable(cmap=cmap_cool , norm=plt.Normalize(vmin=0, vmax=1)) 
         dict_lanes = {} # dict of lanes and their 2D points
-        for m, each in enumerate(predict_ordered[:modes_viz]): 
-            color = "darkorange" 
-            function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
-                                marker=None, linewidth=linewidth*1.5, zorder=1, label='Predicted trajectory')
-            if add_end:
-                plt.plot(each[-1, 0], each[-1, 1], markersize=50, color="darkorange", marker="*",
-                            markeredgecolor='black')
-                # ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange")
-
-        functions = function1 + function2  
-        fun_labels = [f.get_label() for f in functions]
-        plt.legend(functions, fun_labels, loc=0, fontsize=60)  
-        name = name.replace('no-pred','no-int') 
-        plt.savefig(name, bbox_inches='tight')
         
-        if add_end: 
-            for line in ax.lines:
-                line.set_marker(None)
-
         if show_intention:  
-            for m, each in enumerate(predict_ordered[:modes_viz]):           
-                color = cmap_cool(goals_probs_ordered[m]*5)
-                function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
-                                marker=None, linewidth=linewidth*1.5, zorder=1, label='Predicted trajectory')
+            for m, each in enumerate(predict_ordered[:modes_viz]):            
                 # Compute trajectory direction
                 agent_vector_dir = each[-2] - each[-4]
                 agent_dir = np.arctan2(agent_vector_dir[1],agent_vector_dir[0])
@@ -928,6 +909,48 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 closest_point_per_lane_list.append(closest_point_per_lane)
                 confidences.append(probability) # softmax to make it probability of belonging to each cluster   
 
+            # Save figure 1 - no prediction  
+            # legend = ax.legend(loc='upper right', fontsize=60)
+            # handles, labels_ax = ax.get_legend_handles_labels()  
+            # legend._init_legend_box(handles, labels_ax)
+            # legend._set_loc(legend._loc) 
+            plt.legend(loc='upper right', fontsize=50, frameon=False)
+            plt.savefig(name, bbox_inches='tight') 
+
+            # Save figure 2 - goal set prediction
+            for m, each in enumerate(predict_ordered[:modes_viz]): 
+                color = "darkorange" 
+                label_goals = None
+                label = None 
+                if m == 0:
+                    label_goals = "Predicted goal set"
+                    label = "Predicted trajectory"
+                function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
+                                    marker=None, linewidth=linewidth*1.5, zorder=1, label=label)
+                if add_end:
+                    ax.plot(each[-1, 0], each[-1, 1], markersize=50, color="darkorange", marker="*",
+                                markeredgecolor='black', label = label_goals)
+                    # ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange") 
+            # handles.append(function2[0])
+            # labels_ax.append(function2[0].get_label())
+            # legend._init_legend_box(handles, labels_ax)
+            # legend._set_loc(legend._loc)  
+            name = name.replace('no-pred','no-int') 
+            plt.legend(loc='upper right', fontsize=50, frameon=False)
+            plt.savefig(name, bbox_inches='tight')
+
+            # Create figure 3 - intention prediction  
+            if add_end: 
+                for line in ax.lines[-30:]:
+                    line.set_marker(None)
+            for m, each in enumerate(predict_ordered[:modes_viz]): 
+                label = None
+                if m == 0:
+                    label = "Predicted trajectory"
+                color = cmap_cool(goals_probs_ordered[m]*5) 
+                function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
+                                marker=None, linewidth=linewidth*1.5, zorder=1, label=label)
+
             # Hard clustering - choose the highest probable cluster for each mode
             hard_clusters = [[] for i in range(len(clusters))]
             cluster_probs = [0] * len(clusters) 
@@ -964,13 +987,16 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             # Plot the cluster end points 
             if modes_viz > 1:
                 for i,c in enumerate(cluster_avg):
+                    label = None
+                    if i == 0:
+                        label = "Cluster center"
                     try:
                         sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm, weights=np.array(goals_probs_ordered)[list(hard_clusters[i])]*20,
                                         shade=True, thresh=0.06, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1), zorder=0.5, alpha=0.7, bw_adjust=.7)
                     except:
                         pass
                     function3 = plt.plot(c[0], c[1], markersize=50, color=cmap_cool(cluster_probs[i]), marker="o", 
-                                markeredgecolor='black', zorder=200, label='cluster end point')  #line_colors[clusters[i][0]%6]
+                                markeredgecolor='black', zorder=200, label=label)  #line_colors[clusters[i][0]%6]
                     
 
                     # Color final stars with their probability color
@@ -991,17 +1017,20 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             cbar_cool.ax.get_yaxis().labelpad = 20
             cbar_cool.ax.set_ylabel('Probability of each intention', rotation=270,size=60,weight='bold')
             # cbar_cool.set_label('Probability of each intention', rotation=270,size=60,weight='bold')
-    
-            functions = function1 + function2  
-            fun_labels = [f.get_label() for f in functions]
-            plt.legend(functions, fun_labels, loc=0, fontsize=60) 
-
-            plt.title('file_name={}'.format(mapping['file_name']))
-            ax.set_aspect(1)
-            ax.xaxis.set_major_locator(MultipleLocator(4))
-            ax.yaxis.set_major_locator(MultipleLocator(4))
+            
+            
+            legend = ax.legend(loc='upper right', fontsize=60)
+            handles, labels_ax = ax.get_legend_handles_labels()
+            handles.pop(-3)
+            labels_ax.pop(-3)
+            handles.pop(-3)
+            labels_ax.pop(-3)
+            legend._legend_box = None
+            legend._init_legend_box(handles, labels_ax)
+            legend._set_loc(legend._loc)
             name = name.replace('no-int','intention') 
-            plt.savefig(name, bbox_inches='tight')
+            plt.legend(loc='upper right', fontsize=50, frameon=False)
+            plt.savefig(name, bbox_inches='tight') 
     plt.close()
     global visualize_num
     visualize_num += 1
