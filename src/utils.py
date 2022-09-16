@@ -577,6 +577,167 @@ class CustomMarker(Path):
         super().__init__(vertices, codes=svgpath2mpl.parse_path(svg).codes)
 
 
+def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
+                       labels_is_valid=None, predict: np.ndarray = None): 
+    predict = predict.reshape([args.mode_num, future_frame_num, 2])  
+
+    labels = [labels[i] for i in range(future_frame_num) if labels_is_valid[i]]
+    labels = np.array(labels)   
+    
+    lanes = [] 
+    lanes_dir = []
+    agent_lanes_dir = []
+    distances_list = []
+    closest_point_per_lane_list = []
+    confidences = [] 
+
+    # Compute probabilities
+    goals = [[each[-1,0], each[-1,1]] for each in predict]
+    def do_kdtree(combined_x_y_arrays,points):
+        mytree = scipy.spatial.cKDTree(combined_x_y_arrays)
+        dist, indexes = mytree.query(points)
+        return indexes
+    goals2goals2D = [np.array(np.floor(g)) for g in goals]
+    #find the scores for these goals
+    score_indexes = do_kdtree(goals_2D,goals2goals2D).tolist() # log_probabilities
+    goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
+    # order predict by probabilities
+    goals_probs_ids = np.argsort(goals_probs) 
+    predict_ordered = [predict[i] for i in goals_probs_ids[::-1]]
+    goals = np.array([goals[i] for i in goals_probs_ids[::-1]])
+    goals_probs_ordered = [goals_probs[i] for i in goals_probs_ids[::-1]]
+    
+    clusters = [] # goal clusters
+    cluster_lanes = [] # lanes of each cluster      
+    agent_dir  = []
+    dict_lanes = {} # dict of lanes and their 2D points
+
+    for m, each in enumerate(predict_ordered):            
+        # Compute trajectory direction
+        agent_vector_dir = each[-2] - each[-4]
+        agent_dir.append(np.arctan2(agent_vector_dir[1],agent_vector_dir[0]))
+        # Transform point to original coordinate
+        to_origin_coordinate(each[-1:], mapping['element_in_batch'])
+        # Find nearest centerline to the end point for subsequent clustering 
+        lane_id, conf, lines, distances = am.get_nearest_centerline((each[-1]), visualize=False, name=None ,city_name=mapping["city_name"]) 
+        ids_list = []
+        lane_dir = []
+        agent_lane_angle_list = []
+        closest_point_per_lane = [] 
+        probability = []
+        for i, line in enumerate(lines): 
+            # Compute lane direction
+            closest_waypt_indxs = np.linalg.norm(line - each[-1], axis=1).argsort()[:2]
+            closest_point_per_lane.append(line[closest_waypt_indxs[0]])
+            prev_waypoint_id = closest_waypt_indxs.min()
+            next_waypoint_id = closest_waypt_indxs.max()
+            prev_waypoint = line[prev_waypoint_id]
+            next_waypoint = line[next_waypoint_id]
+            lane_dir_vector = next_waypoint - prev_waypoint 
+            lane_dir.append(lane_dir_vector)
+            # Compute angle between agent and lane
+            agent_lane_angle = abs( agent_dir[-1] - np.arctan2(lane_dir_vector[1],lane_dir_vector[0]) )
+            if agent_lane_angle < np.pi / 4: 
+                agent_lane_angle_list.append(agent_lane_angle)
+                ids_list.append(i) 
+            dict_lanes[lane_id[i]] = line 
+        if len(ids_list) > 0: 
+            lane_id, conf, lines, lane_dir, distances, closest_point_per_lane = [lane_id[i] for i in ids_list], [conf[i] for i in ids_list], [lines[i] for i in ids_list], \
+                                            [lane_dir[i] for i in ids_list], [distances[i] for i in ids_list], [closest_point_per_lane[i] for i in ids_list]
+    
+            conf = list(scipy.special.softmax(conf))
+            # Soft clustering into intention-modes with lanes
+            # If goals share at least one lane, then they are in the same cluster 
+            lanes_m = []
+            if len(lane_id) == 1:
+                lanes_m.append(lane_id)
+                probability = [1.0]
+            else:
+            # check if lanes should be in different clusters (don't merge or are successors)
+                for j in range(1, len(lane_id)): 
+                    min_dist = min(np.linalg.norm(lines[0][-1] - lines[j][-1]),np.linalg.norm(lines[0][-1] - lines[j][0]), np.linalg.norm(lines[0][0] - lines[j][-1]))
+                    if min_dist > 2.8: 
+                        if len(lanes_m) == 0:
+                            lanes_m.append(lane_id[:j])
+                            lanes_m.append(lane_id[j:j+1])  
+                            probability.append(conf[0])
+                            probability.append(conf[j])
+                        else:
+                            # check if the lane is in the same cluster as the previous one
+                            included = False
+                            for k in range(1,j):
+                                min_dist = min(np.linalg.norm(lines[k][-1] - lines[j][-1]),np.linalg.norm(lines[k][-1] - lines[j][0]), np.linalg.norm(lines[k][0] - lines[j][-1])) 
+                                if min_dist < 2.8:  
+                                    for kidx, lanem in enumerate(lanes_m):
+                                        if lane_id[k] in lanem and lane_id[j] not in lanem:   
+                                            lanes_m[kidx].append(lane_id[j])
+                                            probability.append(conf[j])
+                                            included=True
+                                            break
+                                    break
+                            if not included: 
+                                lanes_m.append(lane_id[j:j+1])
+                                probability.append(conf[j])
+                    else:
+                        # lane j belongs to the same cluster as lane 0
+                        if len(lanes_m) == 0:
+                            lanes_m.append(lane_id[:j+1])  
+                            probability.append(conf[0])
+                            probability.append(conf[j])
+                            
+                        else:
+                            lanes_m[0].append(lane_id[j])
+                            probability.append(conf[j])   
+            if m == 0:
+                clusters = [set([m]) for i in range(len(lanes_m))] 
+                cluster_lanes = [set(lm) for lm in lanes_m] 
+            else:
+                for l_group in lanes_m: 
+                    clusterized = False
+                    # If any lane in l_group is in cluster_lanes, then they are in the same cluster  
+                    for c_n, lane_cn in enumerate(cluster_lanes):
+                        # compute minimum last distance between lanes in l_group and lanes in cluster_lanes
+                        min_dist = np.min([min(np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][-1]), np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][0]), np.linalg.norm(dict_lanes[l][0] - dict_lanes[l_c][-1])) for l in l_group for l_c in list(lane_cn)])
+                        if any(l_group[i] in lane_cn for i in range(len(l_group))) or min_dist < 2.8:   
+                            clusters[c_n].update([m])
+                            cluster_lanes[c_n].update(l_group)
+                            clusterized = True
+                            break 
+                    if clusterized == False:
+                        clusters.append(set([m]))
+                        cluster_lanes.append(set(l_group))
+        else:
+            print("No lanes found with agent_lane_angle < pi/4")
+            lane_id = []
+        
+        lanes.append(lane_id) 
+        lanes_dir.append(lane_dir)
+        agent_lanes_dir.append(agent_lane_angle_list)
+        distances_list.append(distances)
+        closest_point_per_lane_list.append(closest_point_per_lane)
+        confidences.append(probability) # sum(y_k) = 1)   
+
+    # Hard clustering - choose the highest probable cluster for each mode
+    hard_clusters = [[] for i in range(len(clusters))]
+    cluster_probs = [0] * len(clusters) 
+    max_conf_idx = [(np.array(conf)).argmax() if len(conf)>1 else 0 for conf in confidences] 
+    
+    for m in range(len(max_conf_idx)):
+        for i, lanem in enumerate(lanes[m]):
+            for j in range(len(clusters)):
+                if lanem in cluster_lanes[j]:
+                    cluster_probs[j] += goals_probs_ordered[m]*confidences[m][i] 
+                    if i == max_conf_idx[m]:
+                        hard_clusters[j].append(m)
+    cluster_probs = scipy.special.softmax(cluster_probs) 
+    #cluster_std = [np.std(cluster_goals[j], 0) for j in range(len(clusters))]
+    cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
+
+    # Return the goal id with the highest probabiliy in each cluster 
+    cluster_ids = [goals[hard_clusters[i][0]] for i in range(len(hard_clusters)) if len(hard_clusters[i])>0]
+    return cluster_ids, agent_dir[cluster_ids] 
+
+
 def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
                        labels_is_valid=None, predict: np.ndarray = None):
     print('in visualize_goals_2D', mapping['file_name'])
@@ -745,9 +906,9 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         goals_probs = scipy.special.softmax(scores[score_indexes]) # probabilities of the 12 predicted goals (sum up to 1) 
         # order predict by probabilities
         goals_probs_ids = np.argsort(goals_probs) 
-        predict_ordered = [predict[i] for i in goals_probs_ids]
-        goals = np.array([goals[i] for i in goals_probs_ids])
-        goals_probs_ordered = [goals_probs[i] for i in goals_probs_ids]
+        predict_ordered = [predict[i] for i in goals_probs_ids[::-1]]
+        goals = np.array([goals[i] for i in goals_probs_ids[::-1]])
+        goals_probs_ordered = [goals_probs[i] for i in goals_probs_ids[::-1]]
         
         clusters = [] # goal clusters
         cluster_lanes = [] # lanes of each cluster     

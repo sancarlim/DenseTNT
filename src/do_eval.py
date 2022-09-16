@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 import structs
 import utils
+from utils import clustering
 from modeling.vectornet import VectorNet
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -19,12 +20,14 @@ logger = logging.getLogger(__name__)
 tqdm = partial(tqdm, dynamic_ncols=True)
 
 
-def eval_instance_argoverse(batch_size, args, pred, mapping, file2pred, file2labels, DEs, iter_bar):
+def eval_instance_argoverse(batch_size, args, pred, pred_int, mapping, file2pred, file2pred_int, file2labels, DEs, iter_bar):
     for i in range(batch_size):
         a_pred = pred[i]
+        a_pred_int = pred_int[i]
         assert a_pred.shape == (args.mode_num, args.future_frame_num, 2)
         file_name_int = int(os.path.split(mapping[i]['file_name'])[1][:-4])
         file2pred[file_name_int] = a_pred
+        file2pred_int[file_name_int] = a_pred_int
         if not args.do_test:
             file2labels[file_name_int] = mapping[i]['origin_labels']
 
@@ -75,6 +78,8 @@ def do_eval(args):
     model.to(device)
     model.eval()
     file2pred = {}
+    file2pred_int = {}
+    pred_intention = []
     file2labels = {}
     iter_bar = tqdm(eval_dataloader, desc='Iter (loss=X.XXX)')
     DEs = []
@@ -84,8 +89,12 @@ def do_eval(args):
 
     for step, batch in enumerate(iter_bar):
         pred_trajectory, pred_score, _ = model(batch, device)
-
         mapping = batch
+        # pred_intention_ids, agent_dir = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num,
+        #                                 labels=mapping[i]['vis.labels'],
+        #                                 labels_is_valid=mapping[i]['vis.labels_is_valid'],
+        #                                 predict=mapping[i]['vis.predict_trajs'])
+        # pred_intention, pred_intention_score = pred_trajectory[pred_intention_ids], pred_score[pred_intention_ids]
         batch_size = pred_trajectory.shape[0]
         for i in range(batch_size):
             assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
@@ -93,7 +102,7 @@ def do_eval(args):
             argo_pred[mapping[i]['file_name']] = structs.MultiScoredTrajectory(pred_score[i].copy(), pred_trajectory[i].copy())
 
         if args.argoverse:
-            eval_instance_argoverse(batch_size, args, pred_trajectory, mapping, file2pred, file2labels, DEs, iter_bar)
+            eval_instance_argoverse(batch_size, args, pred_trajectory, pred_intention, mapping, file2pred, file2pred_int, file2labels, DEs, iter_bar)
     if 'optimization' in args.other_params:
         utils.select_goals_by_optimization(None, None, close=True)
 

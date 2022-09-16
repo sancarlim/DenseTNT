@@ -294,9 +294,9 @@ class Decoder(nn.Module):
             pass
         if args.visualize:
             for i in range(batch_size):
-                # if mapping[i]['file_name'].split('/')[-1] in [ '13673.csv']: # '33255.csv', '13673.csv','28482.csv','23937.csv','24953.csv'
-                mapping[i]['element_in_batch'] = i
-                utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
+                if mapping[i]['file_name'].split('/')[-1] in [ '3638.csv']: # 
+                    mapping[i]['element_in_batch'] = i
+                    utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
                                         labels=mapping[i]['vis.labels'],
                                         labels_is_valid=mapping[i]['vis.labels_is_valid'],
                                         predict=mapping[i]['vis.predict_trajs'])
