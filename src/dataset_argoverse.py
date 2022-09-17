@@ -6,6 +6,7 @@ import pickle
 import random
 import zlib
 from collections import defaultdict
+from typing import Dict, List, Optional
 from multiprocessing import Process
 from random import choice
 
@@ -37,7 +38,7 @@ max_vector_num = 0
 VECTOR_PRE_X = 0
 VECTOR_PRE_Y = 1
 VECTOR_X = 2
-VECTOR_Y = 3
+VECTOR_Y = 3 
 
 
 def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[], mapping=None):
@@ -540,10 +541,11 @@ class Dataset(torch.utils.data.Dataset):
         return instance
 
 
-def post_eval(args, file2pred, file2labels, DEs):
-    from argoverse.evaluation import eval_forecasting
+def post_eval(args, file2pred, file2pred_int, file2labels, DEs, city_names):
+    from argoverse.evaluation.eval_forecasting import get_drivable_area_compliance
 
     score_file = args.model_recover_path.split('/')[-1]
+    score_file_int = args.model_recover_path.split('/')[-1]+'_intention'
     for each in args.eval_params:
         each = str(each)
         if len(each) > 15:
@@ -564,10 +566,17 @@ def post_eval(args, file2pred, file2labels, DEs):
         utils.logging(
             'method {}, FDE {}, MR {}, other_errors {}'.format(method, np.mean(FDEs), miss_rate, utils.other_errors_to_string()),
             type=score_file, to_screen=True, append_time=True)
+        utils.logging(
+            'method {}, FDE {}, MR {}, other_errors {}'.format(method, np.mean(FDEs), miss_rate, utils.other_errors_to_string()),
+            type=score_file_int, to_screen=True, append_time=True)
     utils.logging('other_errors {}'.format(utils.other_errors_to_string()),
                   type=score_file, to_screen=True, append_time=True)
-    metric_results = eval_forecasting.get_displacement_errors_and_miss_rate(file2pred, file2labels, args.mode_num, 30, 2.0)
+    metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, args.mode_num, 30, 2.0)
+    metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, args.mode_num, 30, 2.0)
+    metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, args.mode_num)
+    metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, args.mode_num)
     utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
+    utils.logging(metric_results_int, type=score_file_int, to_screen=True, append_time=True)
     DE = np.concatenate(DEs, axis=0)
     length = DE.shape[1]
     DE_score = [0, 0, 0, 0]
@@ -584,3 +593,101 @@ def post_eval(args, file2pred, file2labels, DEs):
 
     utils.logging(vars(args), is_json=True,
                   type=score_file, to_screen=True, append_time=True)
+
+
+
+def get_displacement_errors_and_miss_rate(
+    forecasted_trajectories: Dict[int, List[np.ndarray]],
+    gt_trajectories: Dict[int, np.ndarray],
+    max_guesses: int,
+    horizon: int,
+    miss_threshold: float,
+    forecasted_probabilities: Optional[Dict[int, List[float]]] = None,
+) -> Dict[str, float]:
+    from argoverse.evaluation.eval_forecasting import get_ade, get_fde
+    LOW_PROB_THRESHOLD_FOR_METRICS = 0.05
+    """Compute min fde and ade for each sample.
+
+    Note: Both min_fde and min_ade values correspond to the trajectory which has minimum fde.
+    The Brier Score is defined here:
+        Brier, G. W. Verification of forecasts expressed in terms of probability. Monthly weather review, 1950.
+        https://journals.ametsoc.org/view/journals/mwre/78/1/1520-0493_1950_078_0001_vofeit_2_0_co_2.xml
+
+    Args:
+        forecasted_trajectories: Predicted top-k trajectory dict with key as seq_id and value as list of trajectories.
+                Each element of the list is of shape (pred_len x 2).
+        gt_trajectories: Ground Truth Trajectory dict with key as seq_id and values as trajectory of
+                shape (pred_len x 2)
+        max_guesses: Number of guesses allowed
+        horizon: Prediction horizon
+        miss_threshold: Distance threshold for the last predicted coordinate
+        forecasted_probabilities: Probabilites associated with forecasted trajectories.
+
+    Returns:
+        metric_results: Metric values for minADE, minFDE, MR, p-minADE, p-minFDE, p-MR, brier-minADE, brier-minFDE
+    """
+    metric_results: Dict[str, float] = {}
+    min_ade, prob_min_ade, brier_min_ade = [], [], []
+    min_fde, avg_fde, prob_min_fde, brier_min_fde = [], [], [], []
+    n_misses, prob_n_misses = [], []
+    for k, v in gt_trajectories.items():
+        curr_min_ade = float("inf")
+        curr_min_fde = float("inf")
+        min_idx = 0
+        max_num_traj = min(max_guesses, len(forecasted_trajectories[k]))
+
+        # If probabilities available, use the most likely trajectories, else use the first few
+        if forecasted_probabilities is not None:
+            sorted_idx = np.argsort([-x for x in forecasted_probabilities[k]], kind="stable")
+            # sorted_idx = np.argsort(forecasted_probabilities[k])[::-1]
+            pruned_probabilities = [forecasted_probabilities[k][t] for t in sorted_idx[:max_num_traj]]
+            # Normalize
+            prob_sum = sum(pruned_probabilities)
+            pruned_probabilities = [p / prob_sum for p in pruned_probabilities]
+        else:
+            sorted_idx = np.arange(len(forecasted_trajectories[k]))
+        pruned_trajectories = [forecasted_trajectories[k][t] for t in sorted_idx[:max_num_traj]]
+
+        avgfde = 0
+        for j in range(len(pruned_trajectories)):
+            fde = get_fde(pruned_trajectories[j][:horizon], v[:horizon])
+            avgfde += fde 
+            if fde < curr_min_fde:
+                min_idx = j
+                curr_min_fde = fde
+        curr_min_ade = get_ade(pruned_trajectories[min_idx][:horizon], v[:horizon])
+        min_ade.append(curr_min_ade)
+        min_fde.append(curr_min_fde)
+        avg_fde.append(avgfde/len(pruned_trajectories))
+        n_misses.append(curr_min_fde > miss_threshold)
+
+        if forecasted_probabilities is not None:
+            prob_n_misses.append(1.0 if curr_min_fde > miss_threshold else (1.0 - pruned_probabilities[min_idx]))
+            prob_min_ade.append(
+                min(
+                    -np.log(pruned_probabilities[min_idx]),
+                    -np.log(LOW_PROB_THRESHOLD_FOR_METRICS),
+                )
+                + curr_min_ade
+            )
+            brier_min_ade.append((1 - pruned_probabilities[min_idx]) ** 2 + curr_min_ade)
+            prob_min_fde.append(
+                min(
+                    -np.log(pruned_probabilities[min_idx]),
+                    -np.log(LOW_PROB_THRESHOLD_FOR_METRICS),
+                )
+                + curr_min_fde
+            )
+            brier_min_fde.append((1 - pruned_probabilities[min_idx]) ** 2 + curr_min_fde)
+
+    metric_results["minADE"] = sum(min_ade) / len(min_ade)
+    metric_results["minFDE"] = sum(min_fde) / len(min_fde)
+    metric_results["avgFDE"] = sum(avg_fde) / len(avg_fde)
+    metric_results["MR"] = sum(n_misses) / len(n_misses)
+    if forecasted_probabilities is not None:
+        metric_results["p-minADE"] = sum(prob_min_ade) / len(prob_min_ade)
+        metric_results["p-minFDE"] = sum(prob_min_fde) / len(prob_min_fde)
+        metric_results["p-MR"] = sum(prob_n_misses) / len(prob_n_misses)
+        metric_results["brier-minADE"] = sum(brier_min_ade) / len(brier_min_ade)
+        metric_results["brier-minFDE"] = sum(brier_min_fde) / len(brier_min_fde)
+    return metric_results

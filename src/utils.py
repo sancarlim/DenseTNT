@@ -577,13 +577,8 @@ class CustomMarker(Path):
         super().__init__(vertices, codes=svgpath2mpl.parse_path(svg).codes)
 
 
-def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
-                       labels_is_valid=None, predict: np.ndarray = None): 
+def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict: np.ndarray = None): 
     predict = predict.reshape([args.mode_num, future_frame_num, 2])  
-
-    labels = [labels[i] for i in range(future_frame_num) if labels_is_valid[i]]
-    labels = np.array(labels)   
-    
     lanes = [] 
     lanes_dir = []
     agent_lanes_dir = []
@@ -620,12 +615,15 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
         to_origin_coordinate(each[-1:], mapping['element_in_batch'])
         # Find nearest centerline to the end point for subsequent clustering 
         lane_id, conf, lines, distances = am.get_nearest_centerline((each[-1]), visualize=False, name=None ,city_name=mapping["city_name"]) 
+        to_relative_coordinate(each[-1:], mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
         ids_list = []
         lane_dir = []
         agent_lane_angle_list = []
         closest_point_per_lane = [] 
         probability = []
         for i, line in enumerate(lines): 
+            # Convert to relative coorinates to be in the same coordinate frame as the trajectory
+            to_relative_coordinate(line, mapping['cent_x'],mapping['cent_y'],mapping['angle'])  
             # Compute lane direction
             closest_waypt_indxs = np.linalg.norm(line - each[-1], axis=1).argsort()[:2]
             closest_point_per_lane.append(line[closest_waypt_indxs[0]])
@@ -645,7 +643,6 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
             lane_id, conf, lines, lane_dir, distances, closest_point_per_lane = [lane_id[i] for i in ids_list], [conf[i] for i in ids_list], [lines[i] for i in ids_list], \
                                             [lane_dir[i] for i in ids_list], [distances[i] for i in ids_list], [closest_point_per_lane[i] for i in ids_list]
     
-            conf = list(scipy.special.softmax(conf))
             # Soft clustering into intention-modes with lanes
             # If goals share at least one lane, then they are in the same cluster 
             lanes_m = []
@@ -660,8 +657,8 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
                         if len(lanes_m) == 0:
                             lanes_m.append(lane_id[:j])
                             lanes_m.append(lane_id[j:j+1])  
-                            probability.append(conf[0])
-                            probability.append(conf[j])
+                            probability.append(conf[0]*(1/agent_lane_angle_list[0]))
+                            probability.append(conf[j]*(1/agent_lane_angle_list[j]))
                         else:
                             # check if the lane is in the same cluster as the previous one
                             included = False
@@ -671,23 +668,23 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
                                     for kidx, lanem in enumerate(lanes_m):
                                         if lane_id[k] in lanem and lane_id[j] not in lanem:   
                                             lanes_m[kidx].append(lane_id[j])
-                                            probability.append(conf[j])
+                                            probability.append(conf[j]*(1/agent_lane_angle_list[j]))
                                             included=True
                                             break
                                     break
                             if not included: 
                                 lanes_m.append(lane_id[j:j+1])
-                                probability.append(conf[j])
+                                probability.append(conf[j]*(1/agent_lane_angle_list[j]))
                     else:
                         # lane j belongs to the same cluster as lane 0
                         if len(lanes_m) == 0:
                             lanes_m.append(lane_id[:j+1])  
-                            probability.append(conf[0])
-                            probability.append(conf[j])
+                            probability.append(conf[0]*(1/agent_lane_angle_list[0]))
+                            probability.append(conf[j]*(1/agent_lane_angle_list[j]))
                             
                         else:
                             lanes_m[0].append(lane_id[j])
-                            probability.append(conf[j])   
+                            probability.append(conf[j]*(1/agent_lane_angle_list[j]))   
             if m == 0:
                 clusters = [[m] for i in range(len(lanes_m))] 
                 cluster_lanes = [set(lm) for lm in lanes_m] 
@@ -715,27 +712,23 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
         agent_lanes_dir.append(agent_lane_angle_list)
         distances_list.append(distances)
         closest_point_per_lane_list.append(closest_point_per_lane)
-        confidences.append(probability) # sum(y_k) = 1)   
+        confidences.append(list(scipy.special.softmax(probability)) if len(probability) > 0 else [0]) # sum(y_k) = 1)     
 
-    # Hard clustering - choose the highest probable cluster for each mode
-    hard_clusters = [[] for i in range(len(clusters))]
-    cluster_probs = [0] * len(clusters) 
+    cluster_probs = [[0] for c in range(len(clusters))]
+    confidences_cluster = [[] for c in range(len(clusters))]
     max_conf_idx = [(np.array(conf)).argmax() if len(conf)>1 else 0 for conf in confidences] 
     
-    for m in range(len(max_conf_idx)):
+    for m in range(len(goals)):
         for i, lanem in enumerate(lanes[m]):
             for j in range(len(clusters)):
                 if lanem in cluster_lanes[j]:
-                    cluster_probs[j] += goals_probs_ordered[m]*confidences[m][i] 
-                    if i == max_conf_idx[m]:
-                        hard_clusters[j].append(m)
+                    confidences_cluster[j].append(confidences[m][i]*goals_probs_ordered[m])
+                    cluster_probs[j] += goals_probs_ordered[m]*confidences[m][i]
     cluster_probs = scipy.special.softmax(cluster_probs) 
-    #cluster_std = [np.std(cluster_goals[j], 0) for j in range(len(clusters))]
-    cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
 
-    # Return the goal id with the highest probabiliy in each cluster 
-    cluster_ids = [clusters[i][0] for i in range(len(clusters)) if len(clusters[i])>0]
-    return cluster_ids, np.array(agent_dir)[cluster_ids] 
+    # Return the goal id with the highest confidence in each cluster 
+    cluster_ids = [np.argmax([confidences_cluster[j][i] for i in range(len(clusters[j]))]) for j in range(len(clusters))] 
+    return cluster_ids, np.array(agent_dir).var()
 
 
 def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
@@ -1192,7 +1185,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             name = name.replace('no-int','intention') 
             plt.legend(loc='upper right', fontsize=50, frameon=False)
             plt.savefig(name, bbox_inches='tight') 
-            ids,_= clustering(mapping, goals_2D, scores, future_frame_num)
+            ids,_= clustering(mapping, goals_2D, scores, future_frame_num,predict=predict)
             assert ids == [clusters[i][0] for i in range(len(clusters)) if len(clusters[i])>0]
     plt.close()
     global visualize_num
