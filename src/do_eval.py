@@ -23,11 +23,11 @@ tqdm = partial(tqdm, dynamic_ncols=True)
 def eval_instance_argoverse(batch_size, args, pred, pred_int, mapping, file2pred, file2pred_int, file2labels, DEs, iter_bar):
     for i in range(batch_size):
         a_pred = pred[i]
-        a_pred_int = pred_int[i]
+        #a_pred_int = pred_int[i]
         assert a_pred.shape == (args.mode_num, args.future_frame_num, 2)
         file_name_int = int(os.path.split(mapping[i]['file_name'])[1][:-4])
         file2pred[file_name_int] = a_pred
-        file2pred_int[file_name_int] = a_pred_int
+        f#ile2pred_int[file_name_int] = a_pred_int
         if not args.do_test:
             file2labels[file_name_int] = mapping[i]['origin_labels']
 
@@ -89,16 +89,20 @@ def do_eval(args):
 
     for step, batch in enumerate(iter_bar):
         pred_trajectory, pred_score, _ = model(batch, device)
+        pred_intention = []
+        pred_intention_score =  []
         mapping = batch
-        # pred_intention_ids, agent_dir = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num,
-        #                                 labels=mapping[i]['vis.labels'],
-        #                                 labels_is_valid=mapping[i]['vis.labels_is_valid'],
-        #                                 predict=mapping[i]['vis.predict_trajs'])
-        # pred_intention, pred_intention_score = pred_trajectory[pred_intention_ids], pred_score[pred_intention_ids]
         batch_size = pred_trajectory.shape[0]
         for i in range(batch_size):
             assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
             assert pred_score[i].shape == (args.mode_num,)
+            mapping[i]['element_in_batch'] = i
+            pred_intention_ids, agent_dir = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num,
+                                        labels=mapping[i]['vis.labels'],
+                                        labels_is_valid=mapping[i]['vis.labels_is_valid'],
+                                        predict=mapping[i]['vis.predict_trajs'])
+            pred_intention.append(pred_trajectory[i,pred_intention_ids])
+            pred_intention_score.append(pred_score[i, pred_intention_ids])
             argo_pred[mapping[i]['file_name']] = structs.MultiScoredTrajectory(pred_score[i].copy(), pred_trajectory[i].copy())
 
         if args.argoverse:

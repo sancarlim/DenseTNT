@@ -689,7 +689,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
                             lanes_m[0].append(lane_id[j])
                             probability.append(conf[j])   
             if m == 0:
-                clusters = [set([m]) for i in range(len(lanes_m))] 
+                clusters = [[m] for i in range(len(lanes_m))] 
                 cluster_lanes = [set(lm) for lm in lanes_m] 
             else:
                 for l_group in lanes_m: 
@@ -699,12 +699,12 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
                         # compute minimum last distance between lanes in l_group and lanes in cluster_lanes
                         min_dist = np.min([min(np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][-1]), np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][0]), np.linalg.norm(dict_lanes[l][0] - dict_lanes[l_c][-1])) for l in l_group for l_c in list(lane_cn)])
                         if any(l_group[i] in lane_cn for i in range(len(l_group))) or min_dist < 2.8:   
-                            clusters[c_n].update([m])
+                            clusters[c_n].extend([m])
                             cluster_lanes[c_n].update(l_group)
                             clusterized = True
                             break 
                     if clusterized == False:
-                        clusters.append(set([m]))
+                        clusters.append([m])
                         cluster_lanes.append(set(l_group))
         else:
             print("No lanes found with agent_lane_angle < pi/4")
@@ -734,8 +734,8 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=Non
     cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
 
     # Return the goal id with the highest probabiliy in each cluster 
-    cluster_ids = [goals[hard_clusters[i][0]] for i in range(len(hard_clusters)) if len(hard_clusters[i])>0]
-    return cluster_ids, agent_dir[cluster_ids] 
+    cluster_ids = [clusters[i][0] for i in range(len(clusters)) if len(clusters[i])>0]
+    return cluster_ids, np.array(agent_dir)[cluster_ids] 
 
 
 def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
@@ -1038,7 +1038,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                                     lanes_m[0].append(lane_id[j])
                                     probability.append(conf[j])   
                     if m == 0:
-                        clusters = [set([m]) for i in range(len(lanes_m))] 
+                        clusters = [[m] for i in range(len(lanes_m))] 
                         cluster_lanes = [set(lm) for lm in lanes_m] 
                     else:
                         for l_group in lanes_m: 
@@ -1048,12 +1048,12 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                                 # compute minimum last distance between lanes in l_group and lanes in cluster_lanes
                                 min_dist = np.min([min(np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][-1]), np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][0]), np.linalg.norm(dict_lanes[l][0] - dict_lanes[l_c][-1])) for l in l_group for l_c in list(lane_cn)])
                                 if any(l_group[i] in lane_cn for i in range(len(l_group))) or min_dist < 2.8:   
-                                    clusters[c_n].update([m])
+                                    clusters[c_n].extend([m])
                                     cluster_lanes[c_n].update(l_group)
                                     clusterized = True
                                     break 
                             if clusterized == False:
-                                clusters.append(set([m]))
+                                clusters.append([m])
                                 cluster_lanes.append(set(l_group))
 
                     # Plot lines in relative coordinates
@@ -1192,6 +1192,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
             name = name.replace('no-int','intention') 
             plt.legend(loc='upper right', fontsize=50, frameon=False)
             plt.savefig(name, bbox_inches='tight') 
+            ids,_= clustering(mapping, goals_2D, scores, future_frame_num)
+            assert ids == [clusters[i][0] for i in range(len(clusters)) if len(clusters[i])>0]
     plt.close()
     global visualize_num
     visualize_num += 1
