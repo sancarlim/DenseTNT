@@ -20,17 +20,21 @@ logger = logging.getLogger(__name__)
 tqdm = partial(tqdm, dynamic_ncols=True)
 
 
-def eval_instance_argoverse(batch_size, args, pred, pred_int, mapping, file2pred, file2pred_int, city_name, file2labels, DEs, iter_bar):
+def eval_instance_argoverse(batch_size, args, pred, score, pred_int, score_int, mapping, file2pred, file2score, file2pred_int, file2score_int, city_name, file2labels, DEs, iter_bar):
     for i in range(batch_size):
         a_pred = pred[i]
         a_pred_int = pred_int[i]
+        a_score = score[i]
+        a_score_int = score_int[i]
         assert a_pred.shape == (args.mode_num, args.future_frame_num, 2)
-        file_name_int = int(os.path.split(mapping[i]['file_name'])[1][:-4])
-        file2pred[file_name_int] = a_pred
-        file2pred_int[file_name_int] = a_pred_int
-        city_name[file_name_int] = mapping[i]['city_name']
+        file_name = int(os.path.split(mapping[i]['file_name'])[1][:-4])
+        file2pred[file_name] = a_pred
+        file2score[file_name] = score[i] 
+        file2pred_int[file_name] = a_pred_int
+        file2score_int[file_name] = score_int[i]
+        city_name[file_name] = mapping[i]['city_name']
         if not args.do_test:
-            file2labels[file_name_int] = mapping[i]['origin_labels']
+            file2labels[file_name] = mapping[i]['origin_labels']
 
     if not args.do_test:
         DE = np.zeros([batch_size, args.future_frame_num])
@@ -80,8 +84,12 @@ def do_eval(args):
     model.eval()
     file2pred = {}
     file2pred_int = {}
+    file2score = {}
+    file2score_int = {}
     city_name = {}
     pred_intention = [] 
+    agent_dir_int_var_list = []
+    agent_dir_var_list = []
     file2labels = {}
     iter_bar = tqdm(eval_dataloader, desc='Iter (loss=X.XXX)')
     DEs = []
@@ -98,20 +106,24 @@ def do_eval(args):
             assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
             assert pred_score[i].shape == (args.mode_num,)
             mapping[i]['element_in_batch'] = i
-            pred_intention_ids, agent_dir_var = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num, 
+            pred_intention_ids, agent_dir_var,agent_dir_int_var = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num, 
                                        predict=mapping[i]['vis.predict_trajs'])
+            if len(pred_intention_ids) > 1:
+                agent_dir_var_list.append(agent_dir_var)
+                agent_dir_int_var_list.append(agent_dir_int_var)
             pred_intention.append(pred_trajectory[i,pred_intention_ids])
             pred_intention_score.append(pred_score[i, pred_intention_ids]) 
             argo_pred[mapping[i]['file_name']] = structs.MultiScoredTrajectory(pred_score[i].copy(), pred_trajectory[i].copy())
 
         if args.argoverse:
-            eval_instance_argoverse(batch_size, args, pred_trajectory, pred_intention, mapping, file2pred, file2pred_int, city_name, file2labels, DEs, iter_bar)
+            eval_instance_argoverse(batch_size, args, pred_trajectory, pred_score, pred_intention,pred_intention_score, mapping, file2pred, file2score, file2pred_int, 
+                                            file2score_int, city_name, file2labels, DEs, iter_bar)
     if 'optimization' in args.other_params:
         utils.select_goals_by_optimization(None, None, close=True)
 
     if args.argoverse:
         from dataset_argoverse import post_eval
-        post_eval(args, file2pred, file2pred_int, file2labels, DEs, city_name)
+        post_eval(args, file2pred, file2pred_int,file2score, file2score_int, file2labels, DEs, city_name, agent_dir_var_list, agent_dir_int_var_list)
 
 
 def main():
