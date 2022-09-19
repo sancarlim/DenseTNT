@@ -542,7 +542,8 @@ class Dataset(torch.utils.data.Dataset):
         return instance
 
 
-def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2labels, DEs, city_names, agent_dir_var_list, agent_dir_int_var_list):
+def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2labels, DEs, city_names, agent_dir_var_list, 
+                agent_dir_int_var_list, opposite_dir_batch, max_guesses=None):
     from argoverse.evaluation.eval_forecasting import get_drivable_area_compliance
 
     score_file = args.model_recover_path.split('/')[-1]
@@ -566,22 +567,22 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
             method = 'NMS=' + str(utils.NMS_LIST[method - utils.NMS_START])
         utils.logging(
             'method {}, FDE {}, MR {}, other_errors {}'.format(method, np.mean(FDEs), miss_rate, utils.other_errors_to_string()),
-            type=score_file, to_screen=True, append_time=True)
-        utils.logging(
-            'method {}, FDE {}, MR {}, other_errors {}'.format(method, np.mean(FDEs), miss_rate, utils.other_errors_to_string()),
-            type=score_file_int, to_screen=True, append_time=True)
+            type=score_file, to_screen=True, append_time=True) 
     utils.logging('other_errors {}'.format(utils.other_errors_to_string()),
                   type=score_file, to_screen=True, append_time=True)
-    metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, 3, 30, 2.0, file2score)
-    metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, 3, 30, 2.0, file2score_int)
-    metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, args.mode_num)
+    if max_guesses == None:
+        max_guesses = args.mode_num
+    metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, max_guesses, 30, 2.0, file2score)
+    metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
+    metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, max_guesses)
     metric_results["rF"] = metric_results["avgFDE"] / metric_results["minFDE"]  
     metric_results["yaw_var"] = sum(agent_dir_var_list) / len(agent_dir_var_list)
-    metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, args.mode_num)
+    metric_results["opposite_dir"] = opposite_dir_batch / len(agent_dir_var_list)
+    metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, max_guesses)
     metric_results_int["rF"] = metric_results_int["avgFDE"] / metric_results_int["minFDE"]  
     metric_results_int["yaw_var"] =  sum(agent_dir_int_var_list) / len(agent_dir_int_var_list)
     utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
-    utils.logging(metric_results_int, type=score_file_int, to_screen=True, append_time=True)
+    utils.logging(metric_results_int, type=score_file, to_screen=True, append_time=True)
     DE = np.concatenate(DEs, axis=0)
     length = DE.shape[1]
     DE_score = [0, 0, 0, 0]
