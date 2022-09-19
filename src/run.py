@@ -19,7 +19,9 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 torch.manual_seed(0)
 random.seed(0)
 np.random.seed(0)
-
+torch.backends.cudnn.benchmark = False
+os.environ["CUBLAS_WORKSPACE_CONFIG"]=":4096:8"
+torch.use_deterministic_algorithms(True)
 def compile_pyx_files():
     if True:
         os.chdir('src/')
