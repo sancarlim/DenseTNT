@@ -981,40 +981,37 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         
         if show_intention: 
             dict_lanes, hard_clusters, cluster_probs, cluster_avg, cluster_cov = clustering(mapping, goals_2D, scores, future_frame_num,predict=predict, visualize=True)
-            for lane_id, line in dict_lanes.items():   
-                #Visualize line directions
-                if True:  
-                    # plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
-                    #        linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
-                    plt.scatter(
-                        line[-1][0],
-                        line[-1][1],
-                        200,
-                        marker=".",
-                        color="b",
-                    )
-                    final_dir = line[-1] - line[-2]
-                    dx = final_dir[0] * 5
-                    dy = final_dir[1] * 5
-                    plt.arrow(
-                        line[-1][0],
-                        line[-1][1],
-                        dx,
-                        dy,
-                        color="r",
-                        width=0.2,
-                        length_includes_head=True,                    
-                        zorder=2,
-                    )
-                    # ax.annotate(lane_id[i], (line[-1-i][0], line[-1-i][1])) 
-                    #for j in range(centerline_length):
-                    #    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k") 
+            if len(dict_lanes) > 0:
+                for lane_id, line in dict_lanes.items():   
+                    #Visualize line directions
+                    if True:  
+                        # plt.plot(line[:, 0], line[:, 1], color=line_colors[m%6], 
+                        #        linewidth=linewidth+1, zorder=0.5 ) # plot the centerline 
+                        plt.scatter(
+                            line[-1][0],
+                            line[-1][1],
+                            200,
+                            marker=".",
+                            color="b",
+                        )
+                        final_dir = line[-1] - line[-2]
+                        dx = final_dir[0] * 5
+                        dy = final_dir[1] * 5
+                        plt.arrow(
+                            line[-1][0],
+                            line[-1][1],
+                            dx,
+                            dy,
+                            color="r",
+                            width=0.2,
+                            length_includes_head=True,                    
+                            zorder=2,
+                        )
+                        # ax.annotate(lane_id[i], (line[-1-i][0], line[-1-i][1])) 
+                        #for j in range(centerline_length):
+                        #    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k") 
                    
-            # Save figure 1 - no prediction  
-            # legend = ax.legend(loc='upper right', fontsize=60)
-            # handles, labels_ax = ax.get_legend_handles_labels()  
-            # legend._init_legend_box(handles, labels_ax)
-            # legend._set_loc(legend._loc) 
+            # Save figure 1 - no prediction   
             plt.legend(loc='upper right', fontsize=50, frameon=False)
             plt.savefig(name, bbox_inches='tight') 
 
@@ -1032,79 +1029,77 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                     ax.plot(each[-1, 0], each[-1, 1], markersize=50, color="darkorange", marker="*",
                                 markeredgecolor='black', label = label_goals)
                     # ax.annotate(str(m), (each[-1, 0], each[-1, 1]), color="darkorange") 
-            # handles.append(function2[0])
-            # labels_ax.append(function2[0].get_label())
-            # legend._init_legend_box(handles, labels_ax)
-            # legend._set_loc(legend._loc)  
+
             name = name.replace('no-pred','no-int') 
             plt.legend(loc='upper right', fontsize=50, frameon=False)
             plt.savefig(name, bbox_inches='tight')
 
             # Create figure 3 - intention prediction  
-            if add_end: 
-                for line in ax.lines[-30:]:
-                    line.set_marker(None)
-            for m, each in enumerate(predict_ordered[:modes_viz]): 
-                label = None
-                if m == 0:
-                    label = "Predicted trajectory"
-                color = cmap_cool(goals_probs_ordered[m]*5) 
-                function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
-                                marker=None, linewidth=linewidth*1.5, zorder=1, label=label)
+            if len(hard_clusters) > 0:
+                if add_end: 
+                    for line in ax.lines[-30:]:
+                        line.set_marker(None)
+                for m, each in enumerate(predict_ordered[:modes_viz]): 
+                    label = None
+                    if m == 0:
+                        label = "Predicted trajectory"
+                    color = cmap_cool(goals_probs_ordered[m]*5) 
+                    function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
+                                    marker=None, linewidth=linewidth*1.5, zorder=1, label=label)
 
-            cmap_bupu = plt.get_cmap('BuPu', )
-            sm_bupu = plt.cm.ScalarMappable(cmap=cmap_bupu , norm=plt.Normalize(vmin=0, vmax=1)) 
-            
-            # Plot the cluster end points 
-            if modes_viz > 1:
-                for i,c in enumerate(cluster_avg):
-                    if i == 0:
-                        label = "Cluster center"
-                    else:
-                        label = None
-                    if len(hard_clusters[i]) > 0:
-                        try:
-                            #sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm, weights=np.array(goals_probs_ordered)[list(hard_clusters[i])]*20,
-                            #                shade=True, thresh=0.06, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1), zorder=0.5, alpha=0.7, bw_adjust=.7)
-                            confidence_ellipse(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], cov=cluster_cov[i], 
-                                                ax=ax, facecolor=cmap_cool(cluster_probs[i]), alpha=0.7)
-                        except:
-                            pass
-                        function3 = plt.plot(c[0], c[1], markersize=50, color=cmap_cool(cluster_probs[i]), marker="o", 
-                                    markeredgecolor='black', zorder=200, label=label)  #line_colors[clusters[i][0]%6]
-                    
+                cmap_bupu = plt.get_cmap('BuPu', )
+                sm_bupu = plt.cm.ScalarMappable(cmap=cmap_bupu , norm=plt.Normalize(vmin=0, vmax=1)) 
+                
+                # Plot the cluster end points 
+                if modes_viz > 1:
+                    for i,c in enumerate(cluster_avg):
+                        if i == 0:
+                            label = "Cluster center"
+                        else:
+                            label = None
+                        if len(hard_clusters[i]) > 0:
+                            try:
+                                #sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm, weights=np.array(goals_probs_ordered)[list(hard_clusters[i])]*20,
+                                #                shade=True, thresh=0.06, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1), zorder=0.5, alpha=0.7, bw_adjust=.7)
+                                confidence_ellipse(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], cov=cluster_cov[i], 
+                                                    ax=ax, facecolor=cmap_cool(cluster_probs[i]), alpha=0.7)
+                            except:
+                                pass
+                            function3 = plt.plot(c[0], c[1], markersize=50, color=cmap_cool(cluster_probs[i]), marker="o", 
+                                        markeredgecolor='black', zorder=200, label=label)  #line_colors[clusters[i][0]%6]
+                        
 
-                    # Color final stars with their probability color
-                    if False:
-                        for n_g, goal in enumerate(predict[list(hard_clusters[i]),-1]):
-                            plt.plot(goal[0], goal[1], markersize=60, color=cmap_bupu(5*goals_probs_ordered[hard_clusters[i][n_g]]), marker="*",
-                                    markeredgecolor='black', linestyle='') 
-                function2 = function2 + function3
+                        # Color final stars with their probability color
+                        if False:
+                            for n_g, goal in enumerate(predict[list(hard_clusters[i]),-1]):
+                                plt.plot(goal[0], goal[1], markersize=60, color=cmap_bupu(5*goals_probs_ordered[hard_clusters[i][n_g]]), marker="*",
+                                        markeredgecolor='black', linestyle='') 
+                    function2 = function2 + function3
 
 
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="2%", pad=0.4)
-            #cbar=plt.colorbar(sm, cax=cax)
-            #cbar_bupu = plt.colorbar(sm_bupu, cax=divider.append_axes("right", size="2%", pad=0.6))
-            #cbar_bupu.set_label('Probability of each goal', rotation=270,size=50,weight='bold')
-            #cbar.set_label('Probability scores', rotation=270,size=50,weight='bold')
-            cbar_cool = plt.colorbar(sm_cool, cax=cax)
-            cbar_cool.ax.get_yaxis().labelpad = 20
-            cbar_cool.ax.set_ylabel('Probability of each intention', rotation=270,size=60,weight='bold')
-            # cbar_cool.set_label('Probability of each intention', rotation=270,size=60,weight='bold') 
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="2%", pad=0.4)
+                #cbar=plt.colorbar(sm, cax=cax)
+                #cbar_bupu = plt.colorbar(sm_bupu, cax=divider.append_axes("right", size="2%", pad=0.6))
+                #cbar_bupu.set_label('Probability of each goal', rotation=270,size=50,weight='bold')
+                #cbar.set_label('Probability scores', rotation=270,size=50,weight='bold')
+                cbar_cool = plt.colorbar(sm_cool, cax=cax)
+                cbar_cool.ax.get_yaxis().labelpad = 20
+                cbar_cool.ax.set_ylabel('Probability of each intention', rotation=270,size=60,weight='bold')
+                # cbar_cool.set_label('Probability of each intention', rotation=270,size=60,weight='bold') 
 
-            legend = ax.legend(loc='upper right', fontsize=60)
-            handles, labels_ax = ax.get_legend_handles_labels()
-            handles.pop(-3)
-            labels_ax.pop(-3)
-            handles.pop(-3)
-            labels_ax.pop(-3)
-            legend._legend_box = None
-            legend._init_legend_box(handles, labels_ax)
-            legend._set_loc(legend._loc)
-            name = name.replace('no-int','intention') 
-            plt.legend(loc='upper right', fontsize=50, frameon=False)
-            plt.savefig(name, bbox_inches='tight')  
+                legend = ax.legend(loc='upper right', fontsize=60)
+                handles, labels_ax = ax.get_legend_handles_labels()
+                handles.pop(-3)
+                labels_ax.pop(-3)
+                handles.pop(-3)
+                labels_ax.pop(-3)
+                legend._legend_box = None
+                legend._init_legend_box(handles, labels_ax)
+                legend._set_loc(legend._loc)
+                name = name.replace('no-int','intention') 
+                plt.legend(loc='upper right', fontsize=50, frameon=False)
+                plt.savefig(name, bbox_inches='tight')  
     plt.close()
     global visualize_num
     visualize_num += 1
