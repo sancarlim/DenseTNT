@@ -296,7 +296,7 @@ class Decoder(nn.Module):
             pass
         if args.visualize:
             for i in range(batch_size):
-                if mapping[i]['file_name'].split('/')[-1] in [ '22420.csv','35272.csv']: 
+                if mapping[i]['file_name'].split('/')[-1] in ['3638.csv','1825.csv']: 
                     mapping[i]['element_in_batch'] = i
                     utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
                                     labels=mapping[i]['vis.labels'],

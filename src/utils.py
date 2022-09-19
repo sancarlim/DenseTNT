@@ -586,7 +586,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     distances_list = []
     closest_point_per_lane_list = []
     confidences = [] 
-    lanes_threshold = 2.
+    lanes_threshold = 2.5
     
     # Compute probabilities
     goals = [[each[-1,0], each[-1,1]] for each in predict]
@@ -709,7 +709,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
                         clusters.append([m])
                         cluster_lanes.append(set(l_group))
         else:
-            print("No lanes found with agent_lane_angle < pi/4")
+            # print("No lanes found with agent_lane_angle < pi/4")
             lane_id = []
         
         lanes.append(lane_id) 
@@ -725,6 +725,11 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     confidences_hard_cluster = [[] for c in range(len(clusters))]
     max_conf_idx = [(np.array(conf)).argmax() if len(conf)>1 else 0 for conf in confidences] 
     
+    if len(clusters) == 0:
+        print(f"No clusters have been found in {mapping['file_name'].split('/')[-1]}")
+        return [], [], np.array(agent_dir[:max_guesses]).var(ddof=1), 0, opposite_dir
+
+
     for m in range(len(goals)):
         for i, lanem in enumerate(lanes[m]):
             for j in range(len(clusters)):

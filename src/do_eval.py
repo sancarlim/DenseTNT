@@ -94,7 +94,7 @@ def do_eval(args):
     DEs = []
     length = len(iter_bar)
     argo_pred = structs.ArgoPred()
-    max_guesses = 3
+    max_guesses = 5
 
     for step, batch in enumerate(iter_bar):
         pred_trajectory, pred_score, _ = model(batch, device)
@@ -121,8 +121,8 @@ def do_eval(args):
             pred_score = [scipy.special.softmax(pred_score[i]) for i in range(batch_size)]
             eval_instance_argoverse(batch_size, args, pred_trajectory, pred_score, pred_intention,pred_intention_score, mapping, file2pred, file2score, file2pred_int, 
                                             file2score_int, city_name, file2labels, DEs, iter_bar,id_with_modes)
-    if 'optimization' in args.other_params:
-        utils.select_goals_by_optimization(None, None, close=True)
+    # if 'optimization' in args.other_params:
+    #     utils.select_goals_by_optimization(None, None, close=True)
 
     if args.argoverse:
         from dataset_argoverse import post_eval

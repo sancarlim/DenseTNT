@@ -574,6 +574,8 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
                   type=score_file, to_screen=True, append_time=True)
     if max_guesses == None:
         max_guesses = args.mode_num
+        
+    utils.logging('Max guesses: {}'.format(max_guesses), type=score_file, to_screen=True, append_time=True)
     metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, max_guesses, 30, 2.0, file2score)
     metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
     metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, max_guesses)
