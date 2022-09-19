@@ -231,9 +231,9 @@ class Decoder(nn.Module):
             self.goals_2D_per_example_calc_loss(i, goals_2D, mapping, inputs, inputs_lengths,
                                                 hidden_states, device, loss, DE, gt_points, scores, highest_goal, labels_is_valid)
 
+        mapping[i]['vis.goals_2D'] = goals_2D
+        mapping[i]['vis.scores'] = np.array(scores.tolist())
         if args.visualize:
-            mapping[i]['vis.goals_2D'] = goals_2D
-            mapping[i]['vis.scores'] = np.array(scores.tolist())
             mapping[i]['vis.labels'] = gt_points
             mapping[i]['vis.labels_is_valid'] = labels_is_valid[i]
 
@@ -294,12 +294,12 @@ class Decoder(nn.Module):
             pass
         if args.visualize:
             for i in range(batch_size):
-                if mapping[i]['file_name'].split('/')[-1] in [ '3638.csv']: # 
+                if mapping[i]['file_name'].split('/')[-1] in [ '22420.csv','35272.csv']: 
                     mapping[i]['element_in_batch'] = i
                     utils.visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], self.future_frame_num,
-                                        labels=mapping[i]['vis.labels'],
-                                        labels_is_valid=mapping[i]['vis.labels_is_valid'],
-                                        predict=mapping[i]['vis.predict_trajs'])
+                                    labels=mapping[i]['vis.labels'],
+                                    labels_is_valid=mapping[i]['vis.labels_is_valid'],
+                                    predict=mapping[i]['vis.predict_trajs'])
 
         return pred_trajs_batch, pred_probs_batch, None
 

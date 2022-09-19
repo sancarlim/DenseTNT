@@ -8,8 +8,7 @@ import pickle
 import random
 import subprocess
 import sys
-import time
-import pdb
+import time 
 from collections import defaultdict
 from multiprocessing import Process
 from random import randint
@@ -20,7 +19,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import numpy as np
+import numpy as np 
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
 import torch
 from matplotlib.path import Path
 from matplotlib.pyplot import MultipleLocator
@@ -577,7 +578,7 @@ class CustomMarker(Path):
         super().__init__(vertices, codes=svgpath2mpl.parse_path(svg).codes)
 
 
-def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict: np.ndarray = None, visualize=False): 
+def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict: np.ndarray = None, max_guesses=None, visualize=False): 
     predict = predict.reshape([args.mode_num, future_frame_num, 2])  
     lanes = [] 
     lanes_dir = []
@@ -585,7 +586,8 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     distances_list = []
     closest_point_per_lane_list = []
     confidences = [] 
-
+    lanes_threshold = 2.
+    
     # Compute probabilities
     goals = [[each[-1,0], each[-1,1]] for each in predict]
     def do_kdtree(combined_x_y_arrays,points):
@@ -600,13 +602,13 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     goals_probs_ids = np.argsort(goals_probs) 
     predict_ordered = [predict[i] for i in goals_probs_ids[::-1]]
     goals = np.array([goals[i] for i in goals_probs_ids[::-1]])
-    goals_probs_ordered = [goals_probs[i] for i in goals_probs_ids[::-1]]
+    goals_probs_ordered = np.array([goals_probs[i] for i in goals_probs_ids[::-1]])
     
     clusters = [] # goal clusters
     cluster_lanes = [] # lanes of each cluster      
     agent_dir  = []
     dict_lanes = {} # dict of lanes and their 2D points
-
+    opposite_dir = 0
     for m, each in enumerate(predict_ordered):            
         # Compute trajectory direction
         agent_vector_dir = each[-2] - each[-4]
@@ -638,6 +640,9 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
             if agent_lane_angle < np.pi / 4: 
                 agent_lane_angle_list.append(agent_lane_angle)
                 ids_list.append(i) 
+            else:
+                if distances[i] == min(distances):
+                    opposite_dir += 1
             dict_lanes[lane_id[i]] = line 
         if len(ids_list) > 0: 
             lane_id, conf, lines, lane_dir, distances, closest_point_per_lane = [lane_id[i] for i in ids_list], [conf[i] for i in ids_list], [lines[i] for i in ids_list], \
@@ -653,7 +658,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
             # check if lanes should be in different clusters (don't merge or are successors)
                 for j in range(1, len(lane_id)): 
                     min_dist = min(np.linalg.norm(lines[0][-1] - lines[j][-1]),np.linalg.norm(lines[0][-1] - lines[j][0]), np.linalg.norm(lines[0][0] - lines[j][-1]))
-                    if min_dist > 2.5: 
+                    if min_dist > lanes_threshold: 
                         if len(lanes_m) == 0:
                             lanes_m.append(lane_id[:j])
                             lanes_m.append(lane_id[j:j+1])  
@@ -664,7 +669,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
                             included = False
                             for k in range(1,j):
                                 min_dist = min(np.linalg.norm(lines[k][-1] - lines[j][-1]),np.linalg.norm(lines[k][-1] - lines[j][0]), np.linalg.norm(lines[k][0] - lines[j][-1])) 
-                                if min_dist < 2.5:  
+                                if min_dist < lanes_threshold:  
                                     for kidx, lanem in enumerate(lanes_m):
                                         if lane_id[k] in lanem and lane_id[j] not in lanem:   
                                             lanes_m[kidx].append(lane_id[j])
@@ -695,7 +700,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
                     for c_n, lane_cn in enumerate(cluster_lanes):
                         # compute minimum last distance between lanes in l_group and lanes in cluster_lanes
                         min_dist = np.min([min(np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][-1]), np.linalg.norm(dict_lanes[l][-1] - dict_lanes[l_c][0]), np.linalg.norm(dict_lanes[l][0] - dict_lanes[l_c][-1])) for l in l_group for l_c in list(lane_cn)])
-                        if any(l_group[i] in lane_cn for i in range(len(l_group))) or min_dist < 2.5:   
+                        if any(l_group[i] in lane_cn for i in range(len(l_group))) or min_dist < lanes_threshold:   
                             clusters[c_n].extend([m])
                             cluster_lanes[c_n].update(l_group)
                             clusterized = True
@@ -731,13 +736,73 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
                         confidences_hard_cluster[j].append(confidences[m][i]*goals_probs_ordered[m])
     cluster_probs = scipy.special.softmax(cluster_probs)  
     cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
-    cluster_cov = [np.cov(goals[c], rowvar=False, aweights=goals_probs_ordered[c]) for c in hard_clusters]
+    cluster_cov = []
+    for c in hard_clusters:
+        if len(c)>1:
+            cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0, aweights=np.array(goals_probs_ordered)[c]))
+        else:
+            cluster_cov.append(np.array([[0.05,0],[0,2]])) 
     if visualize:
-        return dict_lanes, hard_clusters, cluster_probs
+        return dict_lanes, hard_clusters, cluster_probs, cluster_avg, np.array(cluster_cov)
 
     # Return the goal id with the highest confidence in each cluster  
     cluster_ids = [hard_clusters[j][np.argmax(confidences_hard_cluster[j])] for j in range(len(hard_clusters)) if len(hard_clusters[j])>0] 
-    return cluster_ids, np.array(agent_dir[:5]).var(), np.array(agent_dir)[cluster_ids].var()
+    cluster_probs = [cluster_probs[i] for i in range(len(hard_clusters)) if len(hard_clusters[i])>0]
+    if max_guesses == None:
+        max_guesses = len(agent_dir)
+    return cluster_ids, cluster_probs,np.array(agent_dir[:max_guesses]).var(ddof=1), np.array(agent_dir)[cluster_ids].var(ddof=1), opposite_dir
+
+
+def confidence_ellipse(x, y, cov, ax, n_std=3.0, facecolor='none', **kwargs):
+    """
+    Create a plot of the covariance confidence ellipse of *x* and *y*.
+
+    Parameters
+    ----------
+    x, y : array-like, shape (n, )
+        Input data.
+
+    ax : matplotlib.axes.Axes
+        The axes object to draw the ellipse into.
+
+    n_std : float
+        The number of standard deviations to determine the ellipse's radiuses.
+
+    **kwargs
+        Forwarded to `~matplotlib.patches.Ellipse`
+
+    Returns
+    -------
+    matplotlib.patches.Ellipse
+    """
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+
+    pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensional dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
+                      facecolor=facecolor, **kwargs)
+
+    # Calculating the standard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = np.mean(x)
+
+    # calculating the standard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = np.mean(y)
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    ax.add_patch(ellipse)
 
 
 def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
@@ -910,7 +975,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         dict_lanes = {} # dict of lanes and their 2D points
         
         if show_intention: 
-            dict_lanes, hard_clusters, cluster_probs = clustering(mapping, goals_2D, scores, future_frame_num,predict=predict, visualize=True)
+            dict_lanes, hard_clusters, cluster_probs, cluster_avg, cluster_cov = clustering(mapping, goals_2D, scores, future_frame_num,predict=predict, visualize=True)
             for lane_id, line in dict_lanes.items():   
                 #Visualize line directions
                 if True:  
@@ -982,25 +1047,26 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                 function2 = plt.plot(each[:, 0], each[:, 1], linestyle="-", color=color,
                                 marker=None, linewidth=linewidth*1.5, zorder=1, label=label)
 
-            cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
-            cluster_cov = [np.cov(goals[c], rowvar=False, aweights=goals_probs_ordered[c]) for c in hard_clusters]
-
             cmap_bupu = plt.get_cmap('BuPu', )
             sm_bupu = plt.cm.ScalarMappable(cmap=cmap_bupu , norm=plt.Normalize(vmin=0, vmax=1)) 
             
             # Plot the cluster end points 
             if modes_viz > 1:
                 for i,c in enumerate(cluster_avg):
-                    label = None
                     if i == 0:
                         label = "Cluster center"
-                    try:
-                        sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm, weights=np.array(goals_probs_ordered)[list(hard_clusters[i])]*20,
-                                        shade=True, thresh=0.06, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1), zorder=0.5, alpha=0.7, bw_adjust=.7)
-                    except:
-                        pass
-                    function3 = plt.plot(c[0], c[1], markersize=50, color=cmap_cool(cluster_probs[i]), marker="o", 
-                                markeredgecolor='black', zorder=200, label=label)  #line_colors[clusters[i][0]%6]
+                    else:
+                        label = None
+                    if len(hard_clusters[i]) > 0:
+                        try:
+                            #sns.kdeplot(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], norm=sm_cool.norm, weights=np.array(goals_probs_ordered)[list(hard_clusters[i])]*20,
+                            #                shade=True, thresh=0.06, hue=cluster_probs[i], palette=cmap_cool, hue_norm= plt.Normalize(vmin=0, vmax=1), zorder=0.5, alpha=0.7, bw_adjust=.7)
+                            confidence_ellipse(x=goals[list(hard_clusters[i]),0], y=goals[list(hard_clusters[i]),1], cov=cluster_cov[i], 
+                                                ax=ax, facecolor=cmap_cool(cluster_probs[i]), alpha=0.7)
+                        except:
+                            pass
+                        function3 = plt.plot(c[0], c[1], markersize=50, color=cmap_cool(cluster_probs[i]), marker="o", 
+                                    markeredgecolor='black', zorder=200, label=label)  #line_colors[clusters[i][0]%6]
                     
 
                     # Color final stars with their probability color
