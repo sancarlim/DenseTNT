@@ -462,7 +462,7 @@ class Dataset(torch.utils.data.Dataset):
                     files.extend([os.path.join(each_dir, file) for file in cur_files if
                                   file.endswith("csv") and not file.startswith('.')]) 
                 if args.debug:
-                    files = files[:128]
+                    files = files[:200]
 
                 pbar = tqdm(total=len(files))
 
@@ -579,11 +579,11 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
     metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, max_guesses, 30, 2.0, file2score)
     metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
     metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, max_guesses)
-    metric_results["rF"] = metric_results["avgFDE"] / metric_results["minFDE"]  
+    metric_results["p-rF"] = metric_results["p_avgFDE"] / metric_results["p-minFDE"]  
     metric_results["yaw_var"] = sum(agent_dir_var_list) / len(agent_dir_var_list)
     metric_results["opposite_dir"] = opposite_dir_batch / len(agent_dir_var_list)
     metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, max_guesses)
-    metric_results_int["rF"] = metric_results_int["avgFDE"] / metric_results_int["minFDE"]  
+    metric_results_int["p-rF"] = metric_results_int["p_avgFDE"] / metric_results_int["p-minFDE"]  
     metric_results_int["yaw_var"] =  sum(agent_dir_int_var_list) / len(agent_dir_int_var_list)
     utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
     utils.logging(metric_results_int, type=score_file, to_screen=True, append_time=True)
@@ -638,7 +638,7 @@ def get_displacement_errors_and_miss_rate(
     """
     metric_results: Dict[str, float] = {}
     min_ade, prob_min_ade, brier_min_ade = [], [], []
-    min_fde, avg_fde, prob_min_fde, brier_min_fde = [], [], [], []
+    min_fde, avg_fde, p_avg_fde, prob_min_fde, brier_min_fde = [], [], [], [], []
     n_misses, prob_n_misses = [], []
     for k, v in gt_trajectories.items():
         curr_min_ade = float("inf")
@@ -659,9 +659,14 @@ def get_displacement_errors_and_miss_rate(
         pruned_trajectories = [forecasted_trajectories[k][t] for t in sorted_idx[:max_num_traj]]
 
         avgfde = 0
+        p_avgfde = 0
         for j in range(len(pruned_trajectories)):
             fde = get_fde(pruned_trajectories[j][:horizon], v[:horizon])
             avgfde += fde 
+            p_avgfde += fde + min(
+                    -np.log(pruned_probabilities[j]),
+                    -np.log(LOW_PROB_THRESHOLD_FOR_METRICS),
+                ) 
             if fde < curr_min_fde:
                 min_idx = j
                 curr_min_fde = fde
@@ -669,6 +674,7 @@ def get_displacement_errors_and_miss_rate(
         min_ade.append(curr_min_ade)
         min_fde.append(curr_min_fde)
         avg_fde.append(avgfde/len(pruned_trajectories))
+        p_avg_fde.append(p_avgfde/len(pruned_trajectories))
         n_misses.append(curr_min_fde > miss_threshold)
 
         if forecasted_probabilities is not None:
@@ -687,12 +693,14 @@ def get_displacement_errors_and_miss_rate(
                     -np.log(LOW_PROB_THRESHOLD_FOR_METRICS),
                 )
                 + curr_min_fde
-            )
+            ) 
+            brier_min_fde.append((1 - pruned_probabilities[min_idx]) ** 2 + curr_min_fde)
             brier_min_fde.append((1 - pruned_probabilities[min_idx]) ** 2 + curr_min_fde)
 
     metric_results["minADE"] = sum(min_ade) / len(min_ade)
     metric_results["minFDE"] = sum(min_fde) / len(min_fde)
     metric_results["avgFDE"] = sum(avg_fde) / len(avg_fde)
+    metric_results["p_avgFDE"] = sum(p_avg_fde) / len(p_avg_fde)
     metric_results["MR"] = sum(n_misses) / len(n_misses)
     if forecasted_probabilities is not None:
         metric_results["p-minADE"] = sum(prob_min_ade) / len(prob_min_ade)

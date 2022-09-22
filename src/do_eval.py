@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch.utils.data import RandomSampler, SequentialSampler
 from tqdm import tqdm
-
+import time
 import structs
 import utils
 from utils import clustering
@@ -94,10 +94,10 @@ def do_eval(args):
     DEs = []
     length = len(iter_bar)
     argo_pred = structs.ArgoPred()
-    max_guesses = 5
+    max_guesses = 3
 
-    for step, batch in enumerate(iter_bar):
-        pred_trajectory, pred_score, _ = model(batch, device)
+    for step, batch in enumerate(iter_bar): 
+        pred_trajectory, pred_score, _ = model(batch, device) 
         pred_intention = []
         pred_intention_score =  []
         id_with_modes = []
@@ -106,10 +106,15 @@ def do_eval(args):
         for i in range(batch_size):
             assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
             assert pred_score[i].shape == (args.mode_num,)
-            mapping[i]['element_in_batch'] = i
+            mapping[i]['element_in_batch'] = i 
+            if mapping[i]['file_name'].split('/')[-1] in ['1825.csv','20880.csv','13067.csv','7214.csv','34487.csv', '38044.csv']:
+                continue
             pred_intention_ids, cluster_probs, agent_dir_var,agent_dir_int_var, opposite_dir = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], 
-                                    args.future_frame_num, mapping[i]['vis.predict_trajs'], max_guesses)
-            if len(pred_intention_ids) > 1:
+                                    args.future_frame_num, mapping[i]['vis.predict_trajs'], max_guesses) 
+            if len(cluster_probs) == 0:
+                print('No clusters found for ', mapping[i]['file_name'])
+                continue
+            if True: #len(pred_intention_ids) > 1:
                 agent_dir_var_list.append(agent_dir_var)
                 agent_dir_int_var_list.append(agent_dir_int_var)
                 opposite_dir_batch += (opposite_dir)/args.mode_num  
@@ -117,9 +122,9 @@ def do_eval(args):
                 pred_intention_score.append(cluster_probs) 
                 id_with_modes.append(i) 
             argo_pred[mapping[i]['file_name']] = structs.MultiScoredTrajectory(pred_score[i].copy(), pred_trajectory[i].copy()) 
-        if args.argoverse:
-            pred_score = [scipy.special.softmax(pred_score[i]) for i in range(batch_size)]
-            eval_instance_argoverse(batch_size, args, pred_trajectory, pred_score, pred_intention,pred_intention_score, mapping, file2pred, file2score, file2pred_int, 
+        
+        pred_score = [scipy.special.softmax(pred_score[i]) for i in range(batch_size)]
+        eval_instance_argoverse(batch_size, args, pred_trajectory, pred_score, pred_intention,pred_intention_score, mapping, file2pred, file2score, file2pred_int, 
                                             file2score_int, city_name, file2labels, DEs, iter_bar,id_with_modes)
     # if 'optimization' in args.other_params:
     #     utils.select_goals_by_optimization(None, None, close=True)

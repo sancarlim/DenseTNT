@@ -727,7 +727,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     
     if len(clusters) == 0:
         print(f"No clusters have been found in {mapping['file_name'].split('/')[-1]}")
-        return [], [], np.array(agent_dir[:max_guesses]).var(ddof=1), 0, opposite_dir
+        return dict_lanes, [], np.array(agent_dir[:max_guesses]).var(ddof=1), 0, opposite_dir
 
 
     for m in range(len(goals)):
@@ -740,25 +740,28 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
                         hard_clusters[j].append(m)
                         confidences_hard_cluster[j].append(confidences[m][i]*goals_probs_ordered[m])
     cluster_probs = scipy.special.softmax(cluster_probs)  
-    cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]   
+    
+    cluster_probs = [cluster_probs[i] for i in range(len(cluster_probs)) if len(hard_clusters[i])>0]
+    hard_clusters = [c for c in hard_clusters if len(c)>0] 
+    confidences_hard_cluster = [c for c in confidences_hard_cluster if len(c)>0]
+    cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]  
     cluster_cov = []
     for c in hard_clusters:
         if len(c)>1:
             cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0, aweights=np.array(goals_probs_ordered)[c]))
-        else:
-            cluster_cov.append(np.array([[0.05,0],[0,2]])) 
+        elif len(c)==1:
+            cluster_cov.append(np.cov(predict_ordered[c[0]][-3:-1,:], rowvar=False, ddof=0)) 
     if visualize:
         return dict_lanes, hard_clusters, cluster_probs, cluster_avg, np.array(cluster_cov)
 
     # Return the goal id with the highest confidence in each cluster  
-    cluster_ids = [hard_clusters[j][np.argmax(confidences_hard_cluster[j])] for j in range(len(hard_clusters)) if len(hard_clusters[j])>0] 
-    cluster_probs = [cluster_probs[i] for i in range(len(hard_clusters)) if len(hard_clusters[i])>0]
+    cluster_ids = [hard_clusters[j][np.argmax(confidences_hard_cluster[j])] for j in range(len(hard_clusters)) if len(hard_clusters[j])>0]  
     if max_guesses == None:
         max_guesses = len(agent_dir)
-    return cluster_ids, cluster_probs,np.array(agent_dir[:max_guesses]).var(ddof=1), np.array(agent_dir)[cluster_ids].var(ddof=1), opposite_dir
+    return cluster_ids, cluster_probs,np.array(agent_dir[:max_guesses]).var(), np.array(agent_dir)[cluster_ids].var(), opposite_dir
 
 
-def confidence_ellipse(x, y, cov, ax, n_std=3.0, facecolor='none', **kwargs):
+def confidence_ellipse(x, y, cov, ax, n_std=2.8, facecolor='none', **kwargs):
     """
     Create a plot of the covariance confidence ellipse of *x* and *y*.
 
@@ -786,7 +789,9 @@ def confidence_ellipse(x, y, cov, ax, n_std=3.0, facecolor='none', **kwargs):
     pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
     # Using a special case to obtain the eigenvalues of this
     # two-dimensional dataset.
-    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_x = np.sqrt(1 + pearson) 
+    if ell_radius_x == 0.0:
+        ell_radius_x = 0.2
     ell_radius_y = np.sqrt(1 - pearson)
     ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
                       facecolor=facecolor, **kwargs)
@@ -1012,8 +1017,8 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
                         #    plt.scatter(line[j, 0], line[j, 1], j / 5.0, marker=".", color="k") 
                    
             # Save figure 1 - no prediction   
-            plt.legend(loc='upper right', fontsize=50, frameon=False)
-            plt.savefig(name, bbox_inches='tight') 
+            # plt.legend(loc='upper right', fontsize=50, frameon=False)
+            # plt.savefig(name, bbox_inches='tight') 
 
             # Save figure 2 - goal set prediction
             for m, each in enumerate(predict_ordered[:modes_viz]): 
