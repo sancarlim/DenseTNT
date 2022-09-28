@@ -578,7 +578,7 @@ class CustomMarker(Path):
         super().__init__(vertices, codes=svgpath2mpl.parse_path(svg).codes)
 
 
-def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict: np.ndarray = None, max_guesses=None, visualize=False): 
+def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict: np.ndarray = None, max_guesses=None): 
     predict = predict.reshape([args.mode_num, future_frame_num, 2])  
     lanes = [] 
     lanes_dir = []
@@ -747,18 +747,22 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     cluster_avg = [np.mean(goals[c], axis=0) for c in hard_clusters]  
     cluster_cov = []
     for c in hard_clusters:
-        if len(c)>1:
-            cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0, aweights=np.array(goals_probs_ordered)[c]))
+        if len(c)>2:
+            cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0, aweights=np.array(goals_probs_ordered)[c]*2))
         elif len(c)==1:
-            cluster_cov.append(np.cov(predict_ordered[c[0]][-3:-1,:], rowvar=False, ddof=0)) 
-    if visualize:
-        return dict_lanes, hard_clusters, cluster_probs, cluster_avg, np.array(cluster_cov)
+            cluster_cov.append(np.cov(predict_ordered[c[0]][-5:-1,:], rowvar=False, ddof=0)) 
+        else:
+            cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0))
+            
+    vis_clusters = [dict_lanes, hard_clusters, cluster_probs, cluster_avg, np.array(cluster_cov)]
 
     # Return the goal id with the highest confidence in each cluster  
     cluster_ids = [hard_clusters[j][np.argmax(confidences_hard_cluster[j])] for j in range(len(hard_clusters)) if len(hard_clusters[j])>0]  
     if max_guesses == None:
         max_guesses = len(agent_dir)
-    return cluster_ids, cluster_probs,np.array(agent_dir[:max_guesses]).var(), np.array(agent_dir)[cluster_ids].var(), opposite_dir
+
+    return cluster_ids, cluster_probs,np.array(agent_dir[:max_guesses]).var(), \
+            np.array(agent_dir)[cluster_ids].var(), opposite_dir, vis_clusters
 
 
 def confidence_ellipse(x, y, cov, ax, n_std=2.8, facecolor='none', **kwargs):
@@ -815,7 +819,7 @@ def confidence_ellipse(x, y, cov, ax, n_std=2.8, facecolor='none', **kwargs):
     ax.add_patch(ellipse)
 
 
-def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, loss=None, labels: np.ndarray = None,
+def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, vis_clusters, loss=None, labels: np.ndarray = None,
                        labels_is_valid=None, predict: np.ndarray = None):
     print('in visualize_goals_2D', mapping['file_name'])
     print('speed', mapping.get('seep', None))
@@ -855,10 +859,10 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     target_agent_color, target_agent_edge_color = '#4bad34', '#c5dfb3' #green 
     plt.cla()
     sns.set()
-    fig = plt.figure(0, figsize=(50.0,50.0)) 
+    fig = plt.figure(0, figsize=(40.0,40.0)) 
 
-    plt.xlim(-40, 40)
-    plt.ylim(-30, 50)
+    plt.xlim(-20, 40)
+    plt.ylim(-10, 50)
 
     cmap = plt.cm.get_cmap('Reds')
     vmin = np.log(0.0001)
@@ -985,7 +989,7 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
         dict_lanes = {} # dict of lanes and their 2D points
         
         if show_intention: 
-            dict_lanes, hard_clusters, cluster_probs, cluster_avg, cluster_cov = clustering(mapping, goals_2D, scores, future_frame_num,predict=predict, visualize=True)
+            dict_lanes, hard_clusters, cluster_probs, cluster_avg, cluster_cov = vis_clusters
             if len(dict_lanes) > 0:
                 for lane_id, line in dict_lanes.items():   
                     #Visualize line directions

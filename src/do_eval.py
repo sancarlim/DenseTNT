@@ -10,7 +10,7 @@ from tqdm import tqdm
 import time
 import structs
 import utils
-from utils import clustering
+from utils import clustering, visualize_goals_2D
 from modeling.vectornet import VectorNet
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -97,20 +97,31 @@ def do_eval(args):
     max_guesses = 3
 
     for step, batch in enumerate(iter_bar): 
-        pred_trajectory, pred_score, _ = model(batch, device) 
+        pred_trajectory, pred_score, _ = model(batch, device)  
         pred_intention = []
         pred_intention_score =  []
         id_with_modes = []
         mapping = batch
         batch_size = pred_trajectory.shape[0]
-        for i in range(batch_size):
+        for i in range(batch_size): 
             assert pred_trajectory[i].shape == (args.mode_num, args.future_frame_num, 2)
             assert pred_score[i].shape == (args.mode_num,)
             mapping[i]['element_in_batch'] = i 
             if mapping[i]['file_name'].split('/')[-1] in ['1825.csv','20880.csv','13067.csv','7214.csv','34487.csv', '38044.csv']:
                 continue
-            pred_intention_ids, cluster_probs, agent_dir_var,agent_dir_int_var, opposite_dir = clustering(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], 
-                                    args.future_frame_num, mapping[i]['vis.predict_trajs'], max_guesses) 
+            pred_intention_ids, cluster_probs, agent_dir_var,agent_dir_int_var, opposite_dir, vis_clusters = clustering(mapping[i], mapping[i]['vis.goals_2D'], 
+                            mapping[i]['vis.scores'], args.future_frame_num, mapping[i]['vis.predict_trajs'], max_guesses) 
+
+            # Interesting visualizations
+            if args.visualize and (opposite_dir>0 or len(pred_intention_ids)>1):
+                #if mapping[i]['file_name'].split('/')[-1] in ['26974.csv','14950.csv','32683.csv','23937.csv']: 
+                mapping[i]['element_in_batch'] = i
+                visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num,  
+                                    vis_clusters,
+                                    labels=mapping[i]['vis.labels'],
+                                    labels_is_valid=mapping[i]['vis.labels_is_valid'],
+                                    predict=mapping[i]['vis.predict_trajs'])
+
             if len(cluster_probs) == 0:
                 print('No clusters found for ', mapping[i]['file_name'])
                 continue
