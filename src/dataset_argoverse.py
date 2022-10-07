@@ -57,6 +57,9 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
         # Add more lane attributes, such as 'has_traffic_control', 'is_intersection' etc.
         if 'semantic_lane' in args.other_params:
             lane_ids = am.get_lane_ids_in_xy_bbox(x, y, city_name, query_search_range_manhattan=args.max_distance)
+            # Mask out lanes (polygons) with a p% probability
+            if 'mask_lanes' in args.other_params:
+                lane_ids = [lane for lane in lane_ids if random.random() > float(args.other_params['p'])]
             local_lane_centerlines = [am.get_lane_segment_centerline(lane_id, city_name) for lane_id in lane_ids]
             polygons = local_lane_centerlines
 
@@ -85,6 +88,7 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
                     scale = mapping['scale']
                     point[0] *= scale
                     point[1] *= scale
+
 
         def dis_2(point):
             return point[0] * point[0] + point[1] * point[1]
@@ -138,7 +142,7 @@ def get_sub_map(args: utils.Args, x, y, city_name, vectors=[], polyline_spans=[]
             mapping['goals_2D'] = np.array(points) 
 
         # Create vectors for polygones/lanes
-        for index_polygon, polygon in enumerate(polygons):
+        for index_polygon, polygon in enumerate(polygons): 
             assert_(2 <= len(polygon) <= 10, info=len(polygon))  #most of the lengths are 10 points
             # assert len(polygon) % 2 == 1
             # if args.visualize:
@@ -236,9 +240,14 @@ def preprocess(args, id2info, mapping):
     mapping['trajs'] = []
     mapping['agents'] = []
     for id in keys:
-        polyline = {}
+        # Mask per agent with 50% probability if id != 'AV' and id != 'AGENT' 
+        if 'mask_agents' in args.other_params and id != 'AV' and id != 'AGENT' and random.random() < float(args.other_params['p']):
+            continue 
 
         info = id2info[id]
+        if 'mask_agents_frames' in args.other_params and id != 'AV' and id != 'AGENT':
+            info = [ i for i in info if random.random() > float(args.other_params['p']) ]
+
         start = len(vectors)
         if args.no_agents:
             if id != 'AV' and id != 'AGENT':
@@ -573,20 +582,29 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
     utils.logging('other_errors {}'.format(utils.other_errors_to_string()),
                   type=score_file, to_screen=True, append_time=True)
     if max_guesses == None:
-        max_guesses = args.mode_num
+        max_guesses = 3
+    if 'mask_lanes' in args.other_params: 
+        utils.logging('Mask lanes with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
+    elif 'mask_agents' in args.other_params: 
+        utils.logging('Mask agents with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
+    elif 'mask_agents' in args.other_params: 
+        utils.logging('Mask agents frames with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
         
     utils.logging('Max guesses: {}'.format(max_guesses), type=score_file, to_screen=True, append_time=True)
+    
     metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, max_guesses, 30, 2.0, file2score)
-    metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
     metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, max_guesses)
     metric_results["p-rF"] = metric_results["p_avgFDE"] / metric_results["p-minFDE"]  
     metric_results["yaw_var"] = sum(agent_dir_var_list) / len(agent_dir_var_list)
     metric_results["opposite_dir"] = opposite_dir_batch / len(agent_dir_var_list)
-    metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, max_guesses)
-    metric_results_int["p-rF"] = metric_results_int["p_avgFDE"] / metric_results_int["p-minFDE"]  
-    metric_results_int["yaw_var"] =  sum(agent_dir_int_var_list) / len(agent_dir_int_var_list)
     utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
-    utils.logging(metric_results_int, type=score_file, to_screen=True, append_time=True)
+    if args.clustering:
+        metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
+        metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, max_guesses)
+        metric_results_int["p-rF"] = metric_results_int["p_avgFDE"] / metric_results_int["p-minFDE"]  
+        metric_results_int["yaw_var"] =  sum(agent_dir_int_var_list) / len(agent_dir_int_var_list)
+        utils.logging(metric_results_int, type=score_file, to_screen=True, append_time=True)
+
     DE = np.concatenate(DEs, axis=0)
     length = DE.shape[1]
     DE_score = [0, 0, 0, 0]
