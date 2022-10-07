@@ -212,6 +212,8 @@ def add_argument(parser):
     parser.add_argument("--mode_num",
                         default=12,
                         type=int)
+    parser.add_argument("--clustering",
+                        action='store_true')
 
 class Args:
     data_dir = None
@@ -269,6 +271,7 @@ class Args:
     mode_num = None
     nms_threshold = None
     inter_agent_types = None
+    clustering = None
 
 
 args: Args = None
@@ -727,7 +730,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
     
     if len(clusters) == 0:
         print(f"No clusters have been found in {mapping['file_name'].split('/')[-1]}")
-        return dict_lanes, [], np.array(agent_dir[:max_guesses]).var(ddof=1), 0, opposite_dir
+        return dict_lanes, [], np.array(agent_dir[:max_guesses]).var(ddof=1), 0, opposite_dir, []
 
 
     for m in range(len(goals)):
@@ -752,8 +755,11 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
         elif len(c)==1:
             cluster_cov.append(np.cov(predict_ordered[c[0]][-5:-1,:], rowvar=False, ddof=0)) 
         else:
-            cluster_cov.append(np.cov(goals[c], rowvar=False, ddof=0))
-            
+            cluster_cov.append(np.cov(np.concatenate((predict_ordered[c[0]][-4:-1,:],predict_ordered[c[1]][-4:-1,:])), rowvar=False, ddof=0))
+        
+        if len(np.where(cluster_cov[-1]==0.0)[0]) > 0:
+            cluster_cov[-1][np.where(cluster_cov[-1]==0.0)[0] , np.where(cluster_cov[-1]==0.0)[1]] = 1e-3
+
     vis_clusters = [dict_lanes, hard_clusters, cluster_probs, cluster_avg, np.array(cluster_cov)]
 
     # Return the goal id with the highest confidence in each cluster  
@@ -765,7 +771,7 @@ def clustering(mapping, goals_2D, scores: np.ndarray, future_frame_num, predict:
             np.array(agent_dir)[cluster_ids].var(), opposite_dir, vis_clusters
 
 
-def confidence_ellipse(x, y, cov, ax, n_std=2.8, facecolor='none', **kwargs):
+def confidence_ellipse(x, y, cov, ax, n_std=2, facecolor='none', **kwargs):
     """
     Create a plot of the covariance confidence ellipse of *x* and *y*.
 
@@ -793,10 +799,10 @@ def confidence_ellipse(x, y, cov, ax, n_std=2.8, facecolor='none', **kwargs):
     pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
     # Using a special case to obtain the eigenvalues of this
     # two-dimensional dataset.
-    ell_radius_x = np.sqrt(1 + pearson) 
-    if ell_radius_x == 0.0:
-        ell_radius_x = 0.2
+    ell_radius_x = np.sqrt(1 + pearson)  
+    ell_radius_x = max(.5, ell_radius_x)
     ell_radius_y = np.sqrt(1 - pearson)
+    ell_radius_y = max(1, ell_radius_y)
     ellipse = Ellipse((0, 0), width=ell_radius_x * 2, height=ell_radius_y * 2,
                       facecolor=facecolor, **kwargs)
 
@@ -859,10 +865,10 @@ def visualize_goals_2D(mapping, goals_2D, scores: np.ndarray, future_frame_num, 
     target_agent_color, target_agent_edge_color = '#4bad34', '#c5dfb3' #green 
     plt.cla()
     sns.set()
-    fig = plt.figure(0, figsize=(40.0,40.0)) 
+    fig = plt.figure(0, figsize=(40.0,50.0)) 
 
-    plt.xlim(-20, 40)
-    plt.ylim(-10, 50)
+    plt.xlim(-20, 40) #-35, 25)
+    plt.ylim(-10, 50) #-25, 50)
 
     cmap = plt.cm.get_cmap('Reds')
     vmin = np.log(0.0001)
