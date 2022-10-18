@@ -1,4 +1,38 @@
-# DenseTNT
+## DenseTNT - Intent
+
+This repository contains the code to reproduce DenseTNT-Intent (Section V), presented in ["Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability"]() by Sandra Carrasco, Sylwia Majchrowska,Joakim Jonander, Christoffer Petterson and David Fernández LLorca, presented at .. 2022.
+
+```bibtex
+citation
+```
+
+Follow the original DenseTNT Repository to set up your environment. 
+
+You can download the model weights using [this link](https://drive.google.com/file/d/1hlVXCmn8MNzj7EpMOmBFm6ymcNdF174v/view?usp=sharing).
+
+```bash
+OUTPUT_DIR=models.densetnt.12m; \
+MODEL_PATH=models.densetnt.12m/model_save/model.16.bin; \
+GPU_NUM=8; \
+python src/run.py --argoverse --future_frame_num 30 \
+  --do_eval --data_dir_for_val val/data/ --output_dir ${OUTPUT_DIR} \
+  --log_dir log/dir/ --hidden_size 128 --eval_batch_size 64 --use_map \
+  --core_num 16 --use_centerline --mode_num 12 --distributed_training ${GPU_NUM} \
+  --other_params \
+    clustering semantic_lane direction l1_loss \
+    goals_2D enhance_global_graph subdivide goal_scoring laneGCN point_sub_graph \
+    lane_scoring complete_traj complete_traj-3 \
+    --eval_params optimization MRminFDE cnt_sample=9 opti_time=0.1 mask_lanes p=0.2
+```
+
+To perform the robustness analysis, you can remove ```clustering``` from ```other_params``` and add  ```mask_agents p=0.2``` for an 80% recall in detecting dynamic agents, or ```mask_lanes p=0.2``` for lanes. Use ```mask_agents_frames p=0.2``` to perform the temporal analysis, masking 20% of the frames in interacting agents. 
+
+To visualize the scenes, add ```visualize``` to ``other_params```.
+
+
+
+## Original DenseTNT Repository
+
 ### [Paper](https://arxiv.org/abs/2108.09640) | [Webpage](https://tsinghua-mars-lab.github.io/DenseTNT/)
 - This is the official implementation of the paper: **DenseTNT: End-to-end Trajectory Prediction from Dense Goal Sets** (ICCV 2021).
 - **DenseTNT v1.0** was released in November 1st, 2021.
