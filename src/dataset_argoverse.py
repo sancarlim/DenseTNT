@@ -587,7 +587,7 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
         utils.logging('Mask lanes with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
     elif 'mask_agents' in args.other_params: 
         utils.logging('Mask agents with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
-    elif 'mask_agents' in args.other_params: 
+    elif 'mask_agents_frames' in args.other_params: 
         utils.logging('Mask agents frames with {} probability'.format(args.other_params['p']), type=score_file, to_screen=True, append_time=True)
         
     utils.logging('Max guesses: {}'.format(max_guesses), type=score_file, to_screen=True, append_time=True)
@@ -595,15 +595,17 @@ def post_eval(args, file2pred, file2pred_int, file2score, file2score_int, file2l
     metric_results = get_displacement_errors_and_miss_rate(file2pred, file2labels, max_guesses, 30, 2.0, file2score)
     metric_results["DAC"] = get_drivable_area_compliance(file2pred, city_names, max_guesses)
     metric_results["p-rF"] = metric_results["p_avgFDE"] / metric_results["p-minFDE"]  
-    metric_results["yaw_var"] = sum(agent_dir_var_list) / len(agent_dir_var_list)
-    metric_results["opposite_dir"] = opposite_dir_batch / len(agent_dir_var_list)
-    utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
     if args.clustering:
         metric_results_int = get_displacement_errors_and_miss_rate(file2pred_int, file2labels, max_guesses, 30, 2.0, file2score_int)
         metric_results_int["DAC"] = get_drivable_area_compliance(file2pred_int, city_names, max_guesses)
         metric_results_int["p-rF"] = metric_results_int["p_avgFDE"] / metric_results_int["p-minFDE"]  
         metric_results_int["yaw_var"] =  sum(agent_dir_int_var_list) / len(agent_dir_int_var_list)
+        metric_results["yaw_var"] = sum(agent_dir_var_list) / len(agent_dir_var_list)
+        metric_results["opposite_dir"] = opposite_dir_batch / len(agent_dir_var_list)
+        utils.logging('Clustered predictions evaluation: ', type=score_file, to_screen=True, append_time=True)
         utils.logging(metric_results_int, type=score_file, to_screen=True, append_time=True)
+    utils.logging('Trajectory prediction evaluation: ', type=score_file, to_screen=True, append_time=True)
+    utils.logging(metric_results, type=score_file, to_screen=True, append_time=True)
 
     DE = np.concatenate(DEs, axis=0)
     length = DE.shape[1]

@@ -40,8 +40,11 @@ def eval_instance_argoverse(batch_size, args, pred, score, pred_int, score_int, 
             assert a_pred.shape == (args.mode_num, args.future_frame_num, 2)
             file_name_int = int(os.path.split(mapping[i]['file_name'])[1][:-4])
             file2pred[file_name_int] = a_pred
+            file2score[file_name_int] = score[i] 
+            city_name[file_name_int] = mapping[i]['city_name']
             if not args.do_test:
                 file2labels[file_name_int] = mapping[i]['origin_labels']
+
     if not args.do_test:
         DE = np.zeros([batch_size, args.future_frame_num])
         for i in range(batch_size):
@@ -123,8 +126,7 @@ def do_eval(args):
                 pred_intention_ids, cluster_probs, agent_dir_var,agent_dir_int_var, opposite_dir, vis_clusters = clustering(mapping[i], mapping[i]['vis.goals_2D'], 
                                 mapping[i]['vis.scores'], args.future_frame_num, mapping[i]['vis.predict_trajs'], max_guesses) 
 
-                # Interesting visualizations
-                if args.visualize and (opposite_dir>0 or len(pred_intention_ids)>1): 
+                if args.visualize:  
                     mapping[i]['element_in_batch'] = i
                     visualize_goals_2D(mapping[i], mapping[i]['vis.goals_2D'], mapping[i]['vis.scores'], args.future_frame_num,  
                                         vis_clusters,
@@ -148,8 +150,6 @@ def do_eval(args):
         pred_score = [scipy.special.softmax(pred_score[i]) for i in range(batch_size)]
         eval_instance_argoverse(batch_size, args, pred_trajectory, pred_score, pred_intention,pred_intention_score, mapping, file2pred, file2score, file2pred_int, 
                                             file2score_int, city_name, file2labels, DEs, iter_bar,id_with_modes)
-    # if 'optimization' in args.other_params:
-    #     utils.select_goals_by_optimization(None, None, close=True)
 
     if args.argoverse:
         from dataset_argoverse import post_eval
