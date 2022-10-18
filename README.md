@@ -1,4 +1,6 @@
 ## DenseTNT - Intent
+[![DOI](https://zenodo.org/badge/493145626.svg)](https://zenodo.org/badge/latestdoi/493145626)
+
 
 This repository contains the code to reproduce DenseTNT-Intent (Section V), presented in ["Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability"]() by Sandra Carrasco, Sylwia Majchrowska, Joakim Johnander, Christoffer Peterson and David Fernández LLorca, presented at .. 2022.
 
