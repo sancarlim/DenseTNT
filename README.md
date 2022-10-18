@@ -27,7 +27,7 @@ python src/run.py --argoverse --future_frame_num 30 \
 
 To perform the robustness analysis, you can remove ```clustering``` from ```other_params``` and add  ```mask_agents p=0.2``` for an 80% recall in detecting dynamic agents, or ```mask_lanes p=0.2``` for lanes. Use ```mask_agents_frames p=0.2``` to perform the temporal analysis, masking 20% of the frames in interacting agents. 
 
-To visualize the scenes, add ```visualize``` to ``other_params```.
+To visualize the scenes, add ```visualize``` to ```other_params```.
 
 
 
