@@ -2,6 +2,8 @@
 
 This repository contains the code to reproduce DenseTNT-Intent (Section V), presented in ["Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability"]() by Sandra Carrasco, Sylwia Majchrowska, Joakim Johnander, Christoffer Peterson and David Fernández LLorca, presented at .. 2022.
 
+![](https://github.com/sancarlim/DenseTNT-Intent/blob/main/readme.png)
+
 ```bibtex
 citation
 ```
