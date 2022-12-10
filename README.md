@@ -2,12 +2,21 @@
 [![DOI](https://zenodo.org/badge/493145626.svg)](https://zenodo.org/badge/latestdoi/493145626)
 
 
-This repository contains the code to reproduce DenseTNT-Intent (Section V), presented in ["Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability"]() by Sandra Carrasco, Sylwia Majchrowska, Joakim Johnander, Christoffer Peterson and David Fernández LLorca, presented at .. 2022.
+This repository contains the code to reproduce DenseTNT-Intent (Section V), presented in ["Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability"](https://arxiv.org/pdf/2210.16144.pdf) by Sandra Carrasco, Sylwia Majchrowska, Joakim Johnander, Christoffer Peterson and David Fernández LLorca, presented at .. 2022.
 
 ![](https://github.com/sancarlim/DenseTNT-Intent/blob/main/readme.png)
 
 ```bibtex
-citation
+@misc{MPCarrasco2022,
+  doi = {10.48550/ARXIV.2210.16144},
+  url = {https://arxiv.org/abs/2210.16144},
+  author = {Carrasco Limeros, Sandra and Majchrowska, Sylwia 
+            and Johnander, Joakim and Petersson, Christoffer 
+            and Sotelo, Miguel Ángel and Llorca, David Fernández},
+  title = {Towards Trustworthy Multi-Modal Motion Prediction: Evaluation and Interpretability},
+  publisher = {arXiv},
+  year = {2022}
+}
 ```
 
 Follow the original DenseTNT Repository to set up your environment. 
